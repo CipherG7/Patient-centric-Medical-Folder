@@ -1,0 +1,10 @@
+[package]
+name = "medical_history"
+version = "0.0.1"
+edition = "2024.beta"
+
+[dependencies]
+
+[addresses]
+medical_history = "0x0"
+

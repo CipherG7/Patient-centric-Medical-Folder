@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Environment files and local secrets
+.env
+.env.*
+!.env.example
+
+# Logs and runtime data
+*.log
+*.pid
+*.pid.lock
+*.seed
+*.sqlite
+*.sqlite3
+*.db
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Sui local artifacts
+sui/.sui/
