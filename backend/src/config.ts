@@ -14,6 +14,10 @@ export const config = {
   // Sui
   SUI_NETWORK: process.env.SUI_NETWORK || 'testnet',
   SUI_RPC_URL: process.env.SUI_RPC_URL || undefined,
+  SUI_GRAPHQL_URL:
+    process.env.SUI_GRAPHQL_URL || 'https://graphql.testnet.sui.io/graphql',
+  SUI_GRPC_URL:
+    process.env.SUI_GRPC_URL || 'https://fullnode.testnet.sui.io:443',
 
   // The published package ID (set after `sui client publish`)
   PACKAGE_ID: process.env.PACKAGE_ID || '',
@@ -56,4 +60,3 @@ export function validateConfig(): void {
     );
   }
 }
-

@@ -7,7 +7,7 @@
 import type { SuiClient, SuiObjectData, SuiObjectResponse } from '@mysten/sui/client';
 import { config } from '../config';
 import { getSuiClient } from '../sui/client';
-import type { SharedObjectIds } from '../sui/transactions';
+import type { SharedObjectIds, SharedObjectRef } from '../sui/transactions';
 
 /**
  * Map of known Sui framework shared object IDs.
@@ -43,6 +43,35 @@ export function getSharedObjectIds(): SharedObjectIds {
       process.env.SHARED_PERMISSION_STORE || '',
     auditLog:
       process.env.SHARED_AUDIT_LOG || '',
+  };
+}
+
+/**
+ * Resolve a shared object's initial version before adding it to a PTB.
+ */
+export async function getSharedObjectRef(
+  client: SuiClient,
+  objectId: string,
+  name: string,
+  mutable: boolean
+): Promise<SharedObjectRef> {
+  const response = await client.getObject({
+    id: objectId,
+    options: { showOwner: true },
+  });
+  const owner = response.data?.owner;
+
+  if (!owner || typeof owner !== 'object' || !('Shared' in owner)) {
+    throw new Error(
+      `${name} (${objectId}) is not a shared object. ` +
+        'Check the SHARED_* environment variable and use the ID from the package publish output.'
+    );
+  }
+
+  return {
+    objectId,
+    initialSharedVersion: owner.Shared.initial_shared_version,
+    mutable,
   };
 }
 
@@ -144,4 +173,3 @@ export function stringToBytes(str: string): Uint8Array {
 export function bytesToString(bytes: number[]): string {
   return new TextDecoder().decode(new Uint8Array(bytes));
 }
-

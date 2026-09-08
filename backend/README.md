@@ -99,8 +99,15 @@ GET /api/health
 |--------|----------|-------------|
 | POST   | `/api/patients/history` | Create a new medical history |
 | GET    | `/api/patients/:addr/history` | Lookup patient's history ID |
+| POST   | `/api/patients/:addr/import` | Import JSON/CSV records into the patient's history |
 | POST   | `/api/patients/profile` | Create/update off-chain profile |
 | GET    | `/api/patients/:addr/profile` | Get patient profile |
+
+Patient imports use a multipart/form-data field named `history`. JSON can be an
+array (or `{ "entries": [...] }`), while CSV must include an `entryType` or
+`type` column. Entry types are `0`–`6` or names such as `diagnosis`,
+`lab report`, `prescription`, `vaccination`, `referral`, `discharge summary`,
+and `imaging report`. Other columns are retained and displayed on the timeline.
 
 ### Medical History
 
@@ -154,4 +161,3 @@ src/
 └── utils/
     └── sui-helpers.ts        # Sui utility functions
 ```
-

@@ -144,6 +144,18 @@ export function EntryCard({ entry, entryId, index, onVerify, className }: EntryC
               SHA-256: {entry.contentHash.slice(0, 8)}…
             </span>
           )}
+
+          {entry.import?.record && (
+            <div className="mt-3 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600">
+              {Object.entries(entry.import.record)
+                .filter(([key]) => !['entryType', 'entry_type', 'type'].includes(key))
+                .map(([key, value]) => (
+                  <p key={key} className="truncate">
+                    <span className="font-medium text-gray-700">{key}:</span> {String(value)}
+                  </p>
+                ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -156,6 +168,5 @@ export function EntryCard({ entry, entryId, index, onVerify, className }: EntryC
     </div>
   );
 }
-
 
 

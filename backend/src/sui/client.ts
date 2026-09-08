@@ -10,6 +10,53 @@ let suiClient: SuiClient | null = null;
 let adminKeypair: Ed25519Keypair | null = null;
 
 /**
+ * Read Move object contents through Sui GraphQL. Public JSON-RPC fullnodes
+ * are deprecated, so read endpoints use this transport instead.
+ */
+export async function getSuiObject(objectId: string): Promise<any> {
+  const response = await fetch(config.SUI_GRAPHQL_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      query: `
+        query GetObject($address: SuiAddress!) {
+          object(address: $address) {
+            address
+            asMoveObject {
+              contents {
+                json
+              }
+            }
+          }
+        }
+      `,
+      variables: { address: objectId },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Sui GraphQL request failed: ${response.status} ${response.statusText}`);
+  }
+  const payload = await response.json() as {
+    data?: { object?: { asMoveObject?: { contents?: { json?: any } } } | null };
+    errors?: Array<{ message?: string }>;
+  };
+  if (payload.errors?.length) {
+    throw new Error(payload.errors.map((error) => error.message || 'GraphQL error').join('; '));
+  }
+  const object = payload.data?.object;
+  if (!object) return { data: null };
+  return {
+    data: {
+      content: {
+        dataType: 'moveObject',
+        fields: object.asMoveObject?.contents?.json || {},
+      },
+    },
+  };
+}
+
+/**
  * Returns a singleton SuiClient connected to the configured network.
  */
 export function getSuiClient(): SuiClient {
@@ -66,4 +113,3 @@ export function getAdminKeypair(): Ed25519Keypair {
 export function getAdminAddress(): string {
   return getAdminKeypair().toSuiAddress();
 }
-

@@ -3,6 +3,7 @@ import { useActiveAccount } from '@/lib/auth';
 import { usePatientHistory, useCreateHistory } from '@/hooks/use-patient';
 import { useFullHistory } from '@/hooks/use-history';
 import { useAuditLog } from '@/hooks/use-audit';
+import { patientImportApi } from '@/lib/api';
 import { EntryCard } from '@/components/EntryCard';
 import { StatusBadge } from '@/components/StatusBadge';
 import { PageSkeleton, CardSkeleton } from '@/components/LoadingSkeleton';
@@ -16,6 +17,8 @@ import {
   AlertCircle,
   RefreshCw,
   FileText,
+  Upload,
+  Loader2,
   User,
   Clock,
 } from 'lucide-react';
@@ -25,6 +28,9 @@ type Tab = 'timeline' | 'consent' | 'audit';
 export function PatientDashboard() {
   const account = useActiveAccount();
   const [activeTab, setActiveTab] = useState<Tab>('timeline');
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const patientAddr = account?.address || '';
 
   // Fetch the patient's history ID
@@ -54,13 +60,31 @@ export function PatientDashboard() {
   const isLoading = lookupLoading || historyLoading;
   const error = lookupError || historyError;
   const historyId = historyLookup?.historyId;
+  const noHistoryFound =
+    !historyId &&
+    lookupError instanceof Error &&
+    lookupError.message.toLowerCase().includes('no history found');
 
-  const handleCreateHistory = () => {
+  const handleNoHistoryFile = (file: File) => {
+    setImportError(null);
+    setImportSuccess(null);
     createHistory(patientAddr, {
       onSuccess: (data) => {
-        refetchLookup();
-        if (data.historyId) refetchHistory();
+        if (!data.historyId) {
+          setImportError('Medical history was created without an ID');
+          return;
+        }
+        setImporting(true);
+        patientImportApi.upload(file, patientAddr, data.historyId)
+          .then((result) => {
+            setImportSuccess(`${result.importedCount} record${result.importedCount === 1 ? '' : 's'} imported successfully.`);
+            return refetchLookup();
+          })
+          .then(() => refetchHistory())
+          .catch((err: unknown) => setImportError(err instanceof Error ? err.message : 'Unable to import medical history'))
+          .finally(() => setImporting(false));
       },
+      onError: (err) => setImportError(err instanceof Error ? err.message : 'Unable to create medical history'),
     });
   };
 
@@ -70,6 +94,21 @@ export function PatientDashboard() {
     // For now, simulate verification
     await new Promise((resolve) => setTimeout(resolve, 1500));
     return !!entry.contentHash && entry.contentHash.length > 0;
+  };
+
+  const handleImport = async (file: File) => {
+    setImporting(true);
+    setImportError(null);
+    setImportSuccess(null);
+    try {
+      const result = await patientImportApi.upload(file, patientAddr);
+      setImportSuccess(`${result.importedCount} record${result.importedCount === 1 ? '' : 's'} imported successfully.`);
+      await refetchHistory();
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : 'Unable to import medical history');
+    } finally {
+      setImporting(false);
+    }
   };
 
   return (
@@ -89,7 +128,7 @@ export function PatientDashboard() {
       </div>
 
       {/* No history state */}
-      {!lookupLoading && !historyId && !lookupError && (
+      {!lookupLoading && !historyId && (!lookupError || noHistoryFound) && (
         <div className="card text-center py-8">
           <AlertCircle className="h-12 w-12 text-gray-300 mx-auto mb-3" />
           <h2 className="text-lg font-semibold text-slate-700">No Medical History Found</h2>
@@ -97,11 +136,7 @@ export function PatientDashboard() {
             You haven't created a medical history yet. Once created, you'll be able to
             manage your entries, grant access to providers, and view the audit log.
           </p>
-          <button
-            onClick={handleCreateHistory}
-            disabled={creatingHistory}
-            className="btn-primary mt-4"
-          >
+          <label className="btn-primary mt-4 inline-flex cursor-pointer">
             {creatingHistory ? (
               <>
                 <RefreshCw className="h-4 w-4 animate-spin" />
@@ -110,15 +145,28 @@ export function PatientDashboard() {
             ) : (
               <>
                 <PlusCircle className="h-4 w-4" />
-                Create Medical History
+                Upload History File
               </>
             )}
-          </button>
+            <input
+              type="file"
+              accept=".json,.csv,application/json,text/csv"
+              className="sr-only"
+              disabled={creatingHistory || importing}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) handleNoHistoryFile(file);
+                event.target.value = '';
+              }}
+            />
+          </label>
+          <p className="text-xs text-gray-500 mt-2">Choose a JSON or CSV file to create your history and import it.</p>
+          {importError && <p className="text-xs text-red-600 mt-2">{importError}</p>}
         </div>
       )}
 
       {/* Error state */}
-      {error && (
+      {error && !noHistoryFound && (
         <div className="card border-red-200 bg-red-50">
           <div className="flex items-center gap-3">
             <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
@@ -170,6 +218,35 @@ export function PatientDashboard() {
           {/* Timeline tab */}
           {activeTab === 'timeline' && (
             <div className="space-y-4">
+              <div className="card border-teal-100 bg-teal-50/40">
+                <div className="flex items-start gap-3">
+                  <Upload className="h-5 w-5 text-teal-600 mt-0.5 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-sm font-semibold text-slate-700">Import your medical history</h3>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Upload a JSON or CSV file. Each record must include an entryType (0–6 or a type name).
+                    </p>
+                    <label className="btn-primary mt-3 inline-flex cursor-pointer text-xs">
+                      {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                      {importing ? 'Importing…' : 'Choose file'}
+                      <input
+                        type="file"
+                        accept=".json,.csv,application/json,text/csv"
+                        className="sr-only"
+                        disabled={importing}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) void handleImport(file);
+                          event.target.value = '';
+                        }}
+                      />
+                    </label>
+                    {importSuccess && <p className="text-xs text-teal-700 mt-2">{importSuccess}</p>}
+                    {importError && <p className="text-xs text-red-600 mt-2">{importError}</p>}
+                  </div>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-slate-700">
                   Medical History Entries
@@ -210,9 +287,9 @@ export function PatientDashboard() {
 
                   {historyData.entries.map((entry, idx) => (
                     <EntryCard
-                      key={idx}
+                      key={entry.id ?? idx}
                       entry={entry}
-                      entryId={idx}
+                      entryId={entry.id ?? idx}
                       index={idx}
                       onVerify={handleVerifyEntry}
                     />

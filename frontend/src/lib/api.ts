@@ -102,6 +102,11 @@ export interface HistoryResponse {
     contentHash: string | null;
     timestampMs: string;
     revoked: boolean;
+    id?: number;
+    import?: {
+      sourceName: string;
+      record: Record<string, unknown>;
+    } | null;
   }>;
   metadata: Record<string, any> | null;
 }
@@ -274,5 +279,28 @@ export const documentApi = {
   },
 };
 
-export { request };
+export interface ImportHistoryResponse {
+  success: boolean;
+  historyId: string;
+  importedCount: number;
+}
 
+export const patientImportApi = {
+  upload: async (file: File, patientAddr: string, historyId?: string): Promise<ImportHistoryResponse> => {
+    const formData = new FormData();
+    formData.append('history', file);
+    if (historyId) formData.append('historyId', historyId);
+    const response = await fetch(`${API_BASE}/patients/${patientAddr}/import`, {
+      method: 'POST',
+      headers: { 'x-api-key': API_KEY },
+      body: formData,
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(errorData.error || `Import failed: ${response.status}`);
+    }
+    return response.json();
+  },
+};
+
+export { request };

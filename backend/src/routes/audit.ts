@@ -9,7 +9,7 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
-import { getSuiClient } from '../sui/client';
+import { getSuiClient, getSuiObject } from '../sui/client';
 import { getSharedObjectIds, bytesToString } from '../utils/sui-helpers';
 import { AppError } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
@@ -60,10 +60,7 @@ router.get(
       }
 
       // Read the AuditLog shared object
-      const auditObj = await client.getObject({
-        id: sharedIds.auditLog,
-        options: { showContent: true },
-      });
+      const auditObj = await getSuiObject(sharedIds.auditLog);
 
       if (!auditObj.data) {
         throw new AppError('AuditLog not found on-chain', 404);
@@ -115,4 +112,3 @@ router.get(
 );
 
 export default router;
-

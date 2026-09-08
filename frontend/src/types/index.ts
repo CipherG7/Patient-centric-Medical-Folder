@@ -85,6 +85,10 @@ export interface HistoryEntry {
   contentHash: string | null;
   timestampMs: string;
   revoked: boolean;
+  import?: {
+    sourceName: string;
+    record: Record<string, unknown>;
+  } | null;
 }
 
 export interface MedicalHistory {
@@ -146,4 +150,3 @@ export interface PaginatedResponse<T> {
   count: number;
   data: T[];
 }
-

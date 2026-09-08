@@ -13,9 +13,11 @@
 
 import {
   Transaction,
+  Inputs,
   type TransactionArgument,
 } from '@mysten/sui/transactions';
 import type { SuiClient } from '@mysten/sui/client';
+import { SuiGrpcClient } from '@mysten/sui/grpc';
 import { bcs } from '@mysten/sui/bcs';
 import { config } from '../config';
 
@@ -33,6 +35,12 @@ export interface SharedObjectIds {
   patientRegistry: string;
   permissionStore: string;
   auditLog: string;
+}
+
+export interface SharedObjectRef {
+  objectId: string;
+  initialSharedVersion: string | number;
+  mutable: boolean;
 }
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -149,7 +157,13 @@ export function buildAddEntryPTB(
   historyId: string,
   entryType: number,
   offChainRef: number[] | string,
-  contentHash: number[] | string
+  contentHash: number[] | string,
+  sharedObjectRefs?: {
+    history?: SharedObjectRef;
+    institutionRegistry?: SharedObjectRef;
+    auditLog?: SharedObjectRef;
+    clock?: SharedObjectRef;
+  }
 ): Transaction {
   const tx = new Transaction();
 
@@ -165,13 +179,21 @@ export function buildAddEntryPTB(
   tx.moveCall({
     target: `${PACKAGE_ID()}::medical_history::add_entry`,
     arguments: [
-      tx.object(historyId),
-      tx.object(sharedObjects.institutionRegistry),
-      tx.object(sharedObjects.auditLog),
+      sharedObjectRefs?.history
+        ? tx.sharedObjectRef(sharedObjectRefs.history)
+        : tx.object(historyId),
+      sharedObjectRefs?.institutionRegistry
+        ? tx.sharedObjectRef(sharedObjectRefs.institutionRegistry)
+        : tx.object(sharedObjects.institutionRegistry),
+      sharedObjectRefs?.auditLog
+        ? tx.sharedObjectRef(sharedObjectRefs.auditLog)
+        : tx.object(sharedObjects.auditLog),
       tx.pure.u8(entryType),
       offChainBytes,
       hashBytes,
-      tx.object('0x6'), // sui::clock::Clock (shared object at 0x6)
+      sharedObjectRefs?.clock
+        ? tx.sharedObjectRef(sharedObjectRefs.clock)
+        : tx.object('0x6'),
     ],
   });
 
@@ -376,20 +398,129 @@ export async function executeTx(
   suiClient: SuiClient,
   tx: Transaction,
   signerKeypair: any
-): Promise<{ digest: string; effects: any }> {
-  const result = await suiClient.signAndExecuteTransaction({
-    transaction: tx,
-    signer: signerKeypair,
-    options: {
-      showEffects: true,
-      showEvents: true,
-      showObjectChanges: true,
+): Promise<{ digest: string; effects: any; events: any; objects: any }> {
+  tx.setSenderIfNotSet(signerKeypair.toSuiAddress());
+  const grpcClient = new SuiGrpcClient({
+    baseUrl: config.SUI_GRPC_URL,
+    network: config.SUI_NETWORK as any,
+  });
+  (grpcClient.core as any).resolveTransactionPlugin = () => async (
+    transactionData: any,
+    _options: unknown,
+    next: () => Promise<void>
+  ) => {
+    for (let index = 0; index < transactionData.inputs.length; index += 1) {
+      const input = transactionData.inputs[index];
+      if (!input.UnresolvedObject) continue;
+
+      const objectResponse = await fetch(config.SUI_GRAPHQL_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          query: `
+            query ResolveObject($address: SuiAddress!) {
+              object(address: $address) {
+                address
+                version
+                digest
+                owner {
+                  __typename
+                  ... on Shared {
+                    initialSharedVersion
+                  }
+                }
+              }
+            }
+          `,
+          variables: { address: input.UnresolvedObject.objectId },
+        }),
+      });
+      if (!objectResponse.ok) {
+        throw new Error(`Sui GraphQL object resolution failed: ${objectResponse.status}`);
+      }
+      const payload = await objectResponse.json() as {
+        data?: {
+          object?: {
+            address: string;
+            version: string;
+            digest: string;
+            owner?: {
+              __typename?: string;
+              initialSharedVersion?: string;
+            } | null;
+          } | null;
+        };
+        errors?: Array<{ message?: string }>;
+      };
+      if (payload.errors?.length) {
+        throw new Error(payload.errors.map((error) => error.message || 'GraphQL error').join('; '));
+      }
+      const object = payload.data?.object;
+      if (!object) {
+        throw new Error(`Sui object not found: ${input.UnresolvedObject.objectId}`);
+      }
+      if (
+        object.owner?.__typename === 'Shared' &&
+        object.owner.initialSharedVersion
+      ) {
+        transactionData.inputs[index] = Inputs.SharedObjectRef({
+          objectId: object.address,
+          initialSharedVersion: object.owner.initialSharedVersion,
+          mutable: input.UnresolvedObject.mutable ?? false,
+        });
+      } else {
+        transactionData.inputs[index] = Inputs.ObjectRef({
+          objectId: object.address,
+          version: object.version,
+          digest: object.digest,
+        });
+      }
+    }
+    await next();
+  };
+  const sender = signerKeypair.toSuiAddress();
+  const { objects: gasCoins } = await grpcClient.core.getCoins({
+    address: sender,
+    coinType: '0x2::sui::SUI',
+    limit: 1,
+  });
+  const gasCoin = gasCoins[0];
+  if (!gasCoin) {
+    throw new Error(`No SUI gas coin available for transaction sender ${sender}`);
+  }
+  tx.setGasPayment([{
+    objectId: gasCoin.id,
+    version: gasCoin.version,
+    digest: gasCoin.digest,
+  }]);
+  tx.setGasBudgetIfNotSet(100_000_000);
+  tx.setGasPrice(BigInt((await grpcClient.core.getReferenceGasPrice()).referenceGasPrice));
+  const bytes = await tx.build({ client: grpcClient });
+  const { signature } = await signerKeypair.signTransaction(bytes);
+  const { response } = await grpcClient.transactionExecutionService.executeTransaction({
+    transaction: {
+      bcs: { value: bytes },
+    },
+    signatures: [{
+      bcs: { value: Buffer.from(signature, 'base64') },
+      signature: { oneofKind: undefined },
+    }],
+    readMask: {
+      paths: [
+        'digest',
+        'effects',
+        'events',
+        'signatures',
+        'objects',
+      ],
     },
   });
 
   return {
-    digest: result.digest,
-    effects: result.effects,
+    digest: response.transaction?.digest || '',
+    effects: response.transaction?.effects || {},
+    events: response.transaction?.events || {},
+    objects: response.transaction?.objects || {},
   };
 }
 
@@ -408,4 +539,3 @@ export async function dryRunTx(
 
   return result;
 }
-

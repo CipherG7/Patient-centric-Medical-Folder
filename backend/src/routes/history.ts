@@ -9,7 +9,7 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
-import { getSuiClient, getAdminKeypair } from '../sui/client';
+import { getSuiClient, getAdminKeypair, getSuiObject } from '../sui/client';
 import {
   buildAddEntryPTB,
   buildRevokeEntryPTB,
@@ -18,7 +18,12 @@ import {
   executeTx,
   dryRunTx,
 } from '../sui/transactions';
-import { getSharedObjectIds, parseEvents, bytesToString } from '../utils/sui-helpers';
+import {
+  getSharedObjectIds,
+  getSharedObjectRef,
+  parseEvents,
+  bytesToString,
+} from '../utils/sui-helpers';
 import { AppError } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
 import { apiKeyAuth, optionalAuth } from '../middleware/auth';
@@ -81,7 +86,23 @@ router.post(
         historyId,
         entryType,
         offChainRef,
-        hashArray
+        hashArray,
+        {
+          history: await getSharedObjectRef(client, historyId, 'MedicalHistory', true),
+          institutionRegistry: await getSharedObjectRef(
+            client,
+            sharedIds.institutionRegistry,
+            'InstitutionRegistry',
+            false
+          ),
+          auditLog: await getSharedObjectRef(
+            client,
+            sharedIds.auditLog,
+            'AuditLog',
+            true
+          ),
+          clock: await getSharedObjectRef(client, '0x6', 'Clock', false),
+        }
       );
 
       const result = await executeTx(client, tx, signer);
@@ -159,10 +180,7 @@ router.get(
       );
 
       // Read the on-chain MedicalHistory object directly for entry data
-      const historyObj = await client.getObject({
-        id: historyId,
-        options: { showContent: true },
-      });
+      const historyObj = await getSuiObject(historyId);
 
       if (!historyObj.data) {
         throw new AppError('MedicalHistory not found', 404);
@@ -177,6 +195,7 @@ router.get(
       const parsedEntries = entries.map((entry: any) => {
         const e = entry.fields?.value?.fields || entry.fields?.value;
         return {
+          id: Number(entry.fields?.key),
           issuer: e?.issuer,
           entryType: e?.entry_type,
           offChainRef: e?.off_chain_ref
@@ -196,13 +215,26 @@ router.get(
         'SELECT * FROM history_metadata WHERE history_id = $1',
         [historyId]
       );
+      const { rows: importedRows } = await db.query(
+        'SELECT entry_id, source_name, record FROM history_import_entries WHERE history_id = $1',
+        [historyId]
+      );
+      const importedById = new Map(
+        importedRows.map((row) => [row.entry_id, {
+          sourceName: row.source_name,
+          record: row.record,
+        }])
+      );
 
       res.json({
         success: true,
         historyId,
         owner,
         entryCount: entryCount ? Number(entryCount) : 0,
-        entries: parsedEntries,
+        entries: parsedEntries.map((entry: any) => ({
+          ...entry,
+          import: importedById.get(entry.id) || null,
+        })),
         metadata: rows[0] || null,
       });
     } catch (err) {
@@ -225,10 +257,7 @@ router.get(
       const sharedIds = getSharedObjectIds();
 
       // Read the history object and find the specific entry
-      const historyObj = await client.getObject({
-        id: historyId,
-        options: { showContent: true },
-      });
+      const historyObj = await getSuiObject(historyId);
 
       if (!historyObj.data) {
         throw new AppError('MedicalHistory not found', 404);
@@ -271,4 +300,3 @@ router.get(
 );
 
 export default router;
-
