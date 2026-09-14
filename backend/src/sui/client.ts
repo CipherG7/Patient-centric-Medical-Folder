@@ -1,12 +1,9 @@
-import {
-  SuiClient,
-  getFullnodeUrl,
-} from '@mysten/sui/client';
+import { SuiGrpcClient } from '@mysten/sui/grpc';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { fromHex } from '@mysten/sui/utils';
 import { config } from '../config';
 
-let suiClient: SuiClient | null = null;
+let suiClient: SuiGrpcClient | null = null;
 let adminKeypair: Ed25519Keypair | null = null;
 
 /**
@@ -22,6 +19,14 @@ export async function getSuiObject(objectId: string): Promise<any> {
         query GetObject($address: SuiAddress!) {
           object(address: $address) {
             address
+            version
+            digest
+            owner {
+              __typename
+              ... on Shared {
+                initialSharedVersion
+              }
+            }
             asMoveObject {
               contents {
                 json
@@ -38,7 +43,15 @@ export async function getSuiObject(objectId: string): Promise<any> {
     throw new Error(`Sui GraphQL request failed: ${response.status} ${response.statusText}`);
   }
   const payload = await response.json() as {
-    data?: { object?: { asMoveObject?: { contents?: { json?: any } } } | null };
+    data?: {
+      object?: {
+        address: string;
+        version?: string;
+        digest?: string;
+        owner?: { __typename?: string; initialSharedVersion?: string } | null;
+        asMoveObject?: { contents?: { json?: any } };
+      } | null;
+    };
     errors?: Array<{ message?: string }>;
   };
   if (payload.errors?.length) {
@@ -48,6 +61,12 @@ export async function getSuiObject(objectId: string): Promise<any> {
   if (!object) return { data: null };
   return {
     data: {
+      objectId: object.address,
+      version: object.version,
+      digest: object.digest,
+      owner: object.owner?.__typename === 'Shared'
+        ? { Shared: { initial_shared_version: object.owner.initialSharedVersion } }
+        : undefined,
       content: {
         dataType: 'moveObject',
         fields: object.asMoveObject?.contents?.json || {},
@@ -57,14 +76,58 @@ export async function getSuiObject(objectId: string): Promise<any> {
 }
 
 /**
+ * Read dynamic fields from a Sui Table object. Table rows are stored as
+ * dynamic fields and are not included in the parent Move object's JSON.
+ */
+export async function getSuiDynamicFields(objectId: string): Promise<any[]> {
+  const response = await fetch(config.SUI_GRAPHQL_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      query: `
+        query GetDynamicFields($address: SuiAddress!) {
+          object(address: $address) {
+            dynamicFields {
+              nodes {
+                name { type value }
+                value {
+                  ... on MoveObject {
+                    contents { json }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `,
+      variables: { address: objectId },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Sui GraphQL dynamic fields request failed: ${response.status}`);
+  }
+
+  const payload = await response.json() as {
+    data?: { object?: { dynamicFields?: { nodes?: any[] } } | null };
+    errors?: Array<{ message?: string }>;
+  };
+  if (payload.errors?.length) {
+    throw new Error(payload.errors.map((error) => error.message || 'GraphQL error').join('; '));
+  }
+  return payload.data?.object?.dynamicFields?.nodes || [];
+}
+
+/**
  * Returns a singleton SuiClient connected to the configured network.
  */
-export function getSuiClient(): SuiClient {
+export function getSuiClient(): SuiGrpcClient {
   if (!suiClient) {
-    const rpcUrl =
-      config.SUI_RPC_URL || getFullnodeUrl(config.SUI_NETWORK as any);
-    suiClient = new SuiClient({ url: rpcUrl });
-    console.log(`[Sui] Client connected to ${config.SUI_NETWORK}: ${rpcUrl}`);
+    suiClient = new SuiGrpcClient({
+      baseUrl: config.SUI_GRPC_URL,
+      network: config.SUI_NETWORK as any,
+    });
+    console.log(`[Sui] gRPC client connected to ${config.SUI_NETWORK}`);
   }
   return suiClient;
 }

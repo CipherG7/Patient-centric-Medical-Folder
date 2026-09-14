@@ -53,6 +53,11 @@ const AddrParamSchema = z.object({
  */
 router.post(
   '/register',
+  (_req, res) => {
+    res.status(403).json({
+      error: 'Institution registration is temporarily disabled',
+    });
+  },
   apiKeyAuth,
   validate({ body: RegisterSchema }),
   async (req, res, next) => {
@@ -74,7 +79,7 @@ router.post(
         throw new AppError('AdminCap object ID required in x-admin-cap-id header', 400);
       }
 
-      const tx = buildRegisterInstitutionPTB(
+      const tx = await buildRegisterInstitutionPTB(
         sharedIds,
         adminCapId,
         institutionAddr,
@@ -125,7 +130,7 @@ router.post(
         throw new AppError('AdminCap object ID required in x-admin-cap-id header', 400);
       }
 
-      const tx = buildRevokeInstitutionPTB(sharedIds, adminCapId, institutionAddr);
+      const tx = await buildRevokeInstitutionPTB(sharedIds, adminCapId, institutionAddr);
       const result = await executeTx(client, tx, signer);
 
       res.json({
@@ -158,7 +163,7 @@ router.post(
         throw new AppError('AdminCap object ID required in x-admin-cap-id header', 400);
       }
 
-      const tx = buildReinstateInstitutionPTB(sharedIds, adminCapId, institutionAddr);
+      const tx = await buildReinstateInstitutionPTB(sharedIds, adminCapId, institutionAddr);
       const result = await executeTx(client, tx, signer);
 
       res.json({

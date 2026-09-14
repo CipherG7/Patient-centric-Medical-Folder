@@ -4,9 +4,8 @@
  * common operations.
  */
 
-import type { SuiClient, SuiObjectData, SuiObjectResponse } from '@mysten/sui/client';
+import { getSuiObject } from '../sui/client';
 import { config } from '../config';
-import { getSuiClient } from '../sui/client';
 import type { SharedObjectIds, SharedObjectRef } from '../sui/transactions';
 
 /**
@@ -26,23 +25,15 @@ export const KNOWN_SHARED_OBJECTS = {
  *   - AuditLog
  *
  * In a real deployment these would be discovered by querying the
- * package's created objects. For the demo, they come from env or
- * a config file.
- *
- * This function provides a placeholder structure.
+ * package's created objects. For the demo, they come from config
+ * (which itself loads them from env — see config.ts).
  */
 export function getSharedObjectIds(): SharedObjectIds {
-  // In production, these would be fetched from a config service or
-  // discovered by scanning the output of `sui client publish`.
   return {
-    institutionRegistry:
-      process.env.SHARED_INSTITUTION_REGISTRY || '',
-    patientRegistry:
-      process.env.SHARED_PATIENT_REGISTRY || '',
-    permissionStore:
-      process.env.SHARED_PERMISSION_STORE || '',
-    auditLog:
-      process.env.SHARED_AUDIT_LOG || '',
+    institutionRegistry: config.SHARED_INSTITUTION_REGISTRY,
+    patientRegistry: config.SHARED_PATIENT_REGISTRY,
+    permissionStore: config.SHARED_PERMISSION_STORE,
+    auditLog: config.SHARED_AUDIT_LOG,
   };
 }
 
@@ -50,15 +41,11 @@ export function getSharedObjectIds(): SharedObjectIds {
  * Resolve a shared object's initial version before adding it to a PTB.
  */
 export async function getSharedObjectRef(
-  client: SuiClient,
   objectId: string,
   name: string,
   mutable: boolean
 ): Promise<SharedObjectRef> {
-  const response = await client.getObject({
-    id: objectId,
-    options: { showOwner: true },
-  });
+  const response = await getSuiObject(objectId);
   const owner = response.data?.owner;
 
   if (!owner || typeof owner !== 'object' || !('Shared' in owner)) {
@@ -79,23 +66,15 @@ export async function getSharedObjectRef(
  * Fetch a Sui object and return its parsed content.
  */
 export async function getObjectFields(
-  client: SuiClient,
   objectId: string
 ): Promise<any> {
-  const response = await client.getObject({
-    id: objectId,
-    options: {
-      showContent: true,
-      showOwner: true,
-      showType: true,
-    },
-  });
+  const response = await getSuiObject(objectId);
 
   if (!response.data) {
     throw new Error(`Object not found: ${objectId}`);
   }
 
-  const data = response.data as SuiObjectData;
+  const data = response.data;
   if (data.content?.dataType !== 'moveObject') {
     throw new Error(`Object is not a Move object: ${objectId}`);
   }
@@ -107,23 +86,23 @@ export async function getObjectFields(
  * Parse the `InstitutionRegistry` shared object to get all registered
  * institutions and their statuses.
  */
-export async function getInstitutionRegistry(client: SuiClient): Promise<any> {
+export async function getInstitutionRegistry(): Promise<any> {
   const sharedIds = getSharedObjectIds();
   if (!sharedIds.institutionRegistry) {
     throw new Error('InstitutionRegistry shared object ID not configured');
   }
-  return getObjectFields(client, sharedIds.institutionRegistry);
+  return getObjectFields(sharedIds.institutionRegistry);
 }
 
 /**
  * Parse the `PatientRegistry` shared object.
  */
-export async function getPatientRegistry(client: SuiClient): Promise<any> {
+export async function getPatientRegistry(): Promise<any> {
   const sharedIds = getSharedObjectIds();
   if (!sharedIds.patientRegistry) {
     throw new Error('PatientRegistry shared object ID not configured');
   }
-  return getObjectFields(client, sharedIds.patientRegistry);
+  return getObjectFields(sharedIds.patientRegistry);
 }
 
 /**
@@ -134,8 +113,8 @@ export function parseEvents(
   eventType: string
 ): any[] {
   return (events || []).filter(
-    (e) => e.type && e.type.includes(eventType)
-  ).map((e) => e.parsedJson || e);
+    (e) => (e.type || e.eventType)?.includes(eventType)
+  ).map((e) => e.parsedJson || e.json || e);
 }
 
 /**

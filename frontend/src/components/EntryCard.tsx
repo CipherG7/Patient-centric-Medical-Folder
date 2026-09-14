@@ -144,18 +144,31 @@ export function EntryCard({ entry, entryId, index, onVerify, className }: EntryC
               SHA-256: {entry.contentHash.slice(0, 8)}…
             </span>
           )}
+        </div>
+      )}
 
-          {entry.import?.record && (
-            <div className="mt-3 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600">
-              {Object.entries(entry.import.record)
-                .filter(([key]) => !['entryType', 'entry_type', 'type'].includes(key))
-                .map(([key, value]) => (
-                  <p key={key} className="truncate">
-                    <span className="font-medium text-gray-700">{key}:</span> {String(value)}
-                  </p>
-                ))}
-            </div>
-          )}
+      {entry.import?.record && (
+        <div className="mt-4 rounded-lg border border-teal-100 bg-teal-50/40 px-4 py-3">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-teal-800">
+              Imported record
+            </p>
+            <p className="text-[11px] text-teal-700 truncate">{entry.import.sourceName}</p>
+          </div>
+          <dl className="grid gap-x-5 gap-y-2 sm:grid-cols-2">
+            {Object.entries(entry.import.record)
+              .filter(([key]) => !['entryType', 'entry_type', 'type'].includes(key))
+              .map(([key, value]) => (
+                <div key={key} className="min-w-0">
+                  <dt className="text-[11px] font-medium text-slate-500">{key}</dt>
+                  <dd className="mt-0.5 break-words text-sm text-slate-700">
+                    {typeof value === 'object' && value !== null
+                      ? JSON.stringify(value)
+                      : String(value ?? '—')}
+                  </dd>
+                </div>
+              ))}
+          </dl>
         </div>
       )}
 

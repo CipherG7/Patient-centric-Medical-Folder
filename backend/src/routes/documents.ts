@@ -4,12 +4,12 @@
  * POST   /api/documents/upload          - Upload & encrypt a document for a history entry
  * GET    /api/documents/:cid            - Download & decrypt a document (requires access)
  *
- * This is the REST interface to the encryption + IPFS storage layer.
+ * This is the REST interface to the encryption + Walrus storage layer.
  * The typical flow:
  *   1. Institution creates an on-chain entry via POST /api/history/:historyId/entry
  *      → gets back an entryId and stores offChainRef + contentHash
  *   2. Institution uploads the actual document via POST /api/documents/upload
- *      → service encrypts, uploads to IPFS, stores key
+ *      → service encrypts, uploads to Walrus, stores key
  *   3. Grantee downloads via GET /api/documents/:cid with proper access
  */
 
@@ -17,7 +17,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
 import { processDocument } from '../storage/document-service';
-import { downloadFromIPFS } from '../storage/ipfs';
+import { downloadFromWalrus } from '../storage/walrus';
 import { getEntryKeyForUser } from '../encryption/key-manager';
 import { decryptDocument, verifyContentHash } from '../encryption';
 import { getDb } from '../db';
@@ -66,9 +66,9 @@ const VerifyQuerySchema = z.object({
  * Flow:
  *   1. Receives a file (multipart/form-data) + metadata in fields
  *   2. Encrypts the file with AES-256-GCM (per-entry key)
- *   3. Uploads encrypted blob to IPFS
+ *   3. Uploads encrypted blob to Walrus
  *   4. Stores entry key wrapped for the owner
- *   5. Returns offChainRef (CID) and contentHash (SHA-256 hex)
+ *   5. Returns offChainRef (Walrus blob ID) and contentHash (SHA-256 hex)
  *
  * The caller should then create the on-chain entry with these values
  * via POST /api/history/:historyId/entry.
@@ -153,8 +153,8 @@ router.get(
         );
       }
 
-      // 2. Download encrypted blob from IPFS
-      const encryptedBlob = await downloadFromIPFS(cid);
+      // 2. Download encrypted blob from Walrus
+      const encryptedBlob = await downloadFromWalrus(cid);
 
       // 3. Parse the blob back into iv + ciphertext + tag
       if (encryptedBlob.length < 28) {
@@ -193,4 +193,3 @@ router.get(
 );
 
 export default router;
-

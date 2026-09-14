@@ -3,9 +3,9 @@
  *
  * Coordinates the full pipeline:
  *   1. Encrypt raw document bytes with AES-256-GCM (using a per-entry key)
- *   2. Upload encrypted blob to IPFS → get CID
+ *   2. Upload encrypted blob to Walrus → get blob ID
  *   3. Store per-entry key (wrapped for the owner) in PostgreSQL
- *   4. Return { offChainRef (CID), contentHash (SHA-256 hex) }
+ *   4. Return { offChainRef (Walrus blob ID), contentHash (SHA-256 hex) }
  *
  * This service is called by the route handlers when creating new entries.
  * The returned values are what gets written on-chain.
@@ -13,13 +13,13 @@
 
 import crypto from 'crypto';
 import { encryptDocument, deriveWrappingKey, encryptWithAES } from '../encryption';
-import { uploadToIPFS } from './ipfs';
+import { uploadToWalrus } from './walrus';
 import { getDb } from '../db';
 
 // ─── Types ─────────────────────────────────────────────────
 
 export interface ProcessedDocument {
-  /** The IPFS CID of the encrypted blob — this becomes `off_chain_ref`. */
+  /** The Walrus blob ID of the encrypted blob — this becomes `off_chain_ref`. */
   offChainRef: string;
   /** SHA-256 hex digest of the encrypted blob — this becomes `content_hash`. */
   contentHash: string;
@@ -32,15 +32,15 @@ export interface ProcessedDocument {
 /**
  * Process a document for on-chain storage:
  *   1. Encrypt with AES-256-GCM (per-entry key)
- *   2. Upload encrypted blob to IPFS
+ *   2. Upload encrypted blob to Walrus
  *   3. Store the entry key wrapped for the owner in PostgreSQL
- *   4. Return offChainRef (CID) and contentHash (SHA-256 hex)
+ *   4. Return offChainRef (Walrus blob ID) and contentHash (SHA-256 hex)
  *
  * @param documentBytes - The raw document bytes (PDF, text, image, etc.).
  * @param historyId - The MedicalHistory object ID (0x-prefixed hex).
  * @param entryId - The on-chain entry ID (from the Move event).
  * @param ownerAddr - The patient's Sui address (history owner).
- * @returns The CID and content hash ready for on-chain storage.
+ * @returns The Walrus blob ID and content hash ready for on-chain storage.
  */
 export async function processDocument(
   documentBytes: Buffer,
@@ -54,15 +54,15 @@ export async function processDocument(
   // 2. Encrypt the document
   const { encrypted, contentHash } = encryptDocument(documentBytes, entryKey);
 
-  // 3. Serialise for IPFS: concat(iv + ciphertext + tag) as raw bytes
+  // 3. Serialise for Walrus: concat(iv + ciphertext + tag) as raw bytes
   const encryptedBlob = Buffer.concat([
     Buffer.from(encrypted.iv, 'base64'),
     Buffer.from(encrypted.ciphertext, 'base64'),
     Buffer.from(encrypted.tag, 'base64'),
   ]);
 
-  // 4. Upload encrypted blob to IPFS
-  const { cid, size } = await uploadToIPFS(encryptedBlob, `entry-${entryId}.enc`);
+  // 4. Upload encrypted blob to Walrus
+  const { blobId, size } = await uploadToWalrus(encryptedBlob);
 
   // 5. Wrap the entry key for the owner and store in PostgreSQL
   const ownerWrappingKey = deriveWrappingKey(ownerAddr);
@@ -78,13 +78,12 @@ export async function processDocument(
 
   console.log(
     `[DocService] Processed entry ${entryId} for history ${historyId}: ` +
-    `CID=${cid}, contentHash=${contentHash.substring(0, 16)}..., size=${size}`
+    `blobId=${blobId}, contentHash=${contentHash.substring(0, 16)}..., size=${size}`
   );
 
   return {
-    offChainRef: cid,
+    offChainRef: blobId,
     contentHash,
     encryptedSize: size,
   };
 }
-

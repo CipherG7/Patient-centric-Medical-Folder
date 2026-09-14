@@ -13,8 +13,13 @@ export function cn(...inputs: ClassValue[]): string {
  * Format a Sui timestamp (milliseconds since epoch) to a human-readable date.
  */
 export function formatTimestamp(ms: string | number): string {
-  const numMs = typeof ms === 'string' ? parseInt(ms, 10) : ms;
-  return format(new Date(numMs), 'MMM d, yyyy HH:mm');
+  const numMs = typeof ms === 'number'
+    ? ms
+    : /^\d+$/.test(ms)
+      ? Number(ms)
+      : Date.parse(ms);
+  const date = new Date(numMs);
+  return Number.isNaN(date.getTime()) ? 'Unknown date' : format(date, 'MMM d, yyyy HH:mm');
 }
 
 /**

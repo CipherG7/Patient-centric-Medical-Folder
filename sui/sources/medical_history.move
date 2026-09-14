@@ -97,14 +97,41 @@ module medical_history::medical_history {
     // Creation
     // ------------------------------------------------------------------
 
-    /// A patient calls this once to create their history object. It's
-    /// shared immediately so institutions can later append to it, and the
-    /// mapping is recorded in `PatientRegistry` for discoverability.
+    /// A patient calls this once, themselves, to create their history
+    /// object. Requires the patient's own signature (`ctx::sender()` is
+    /// trusted as the patient's identity) — use this from a flow where the
+    /// patient signs via their own wallet.
     public fun create_history(
         patient_registry: &mut PatientRegistry,
         ctx: &mut TxContext,
     ) {
         let owner = tx_context::sender(ctx);
+        create_history_internal(patient_registry, owner, ctx);
+    }
+
+    /// Admin-mediated creation path: an operator (e.g. this backend, signing
+    /// with its own key) creates a history *for* `patient`, whose identity
+    /// is passed explicitly rather than inferred from `ctx::sender()`.
+    ///
+    /// NOTE: this intentionally departs from this module's/`patient_registry`'s
+    /// original "self-service, no gatekeeping" design (see patient_registry.move
+    /// module doc). Currently any signer can call this and register a history
+    /// for any address — fine for the current backend-signs-everything demo
+    /// model, but worth gating behind an admin capability before this is
+    /// anything more than that.
+    public fun create_history_for(
+        patient_registry: &mut PatientRegistry,
+        patient: address,
+        ctx: &mut TxContext,
+    ) {
+        create_history_internal(patient_registry, patient, ctx);
+    }
+
+    fun create_history_internal(
+        patient_registry: &mut PatientRegistry,
+        owner: address,
+        ctx: &mut TxContext,
+    ) {
         let history = MedicalHistory {
             id: object::new(ctx),
             owner,

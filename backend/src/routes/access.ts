@@ -67,7 +67,7 @@ router.post(
         throw new AppError('Shared object IDs not configured', 500);
       }
 
-      const tx = buildGrantFullAccessPTB(
+      const tx = await buildGrantFullAccessPTB(
         sharedIds,
         historyId,
         granteeAddr,
@@ -106,7 +106,7 @@ router.post(
       const signer = getAdminKeypair();
       const sharedIds = getSharedObjectIds();
 
-      const tx = buildGrantPartialAccessPTB(
+      const tx = await buildGrantPartialAccessPTB(
         sharedIds,
         historyId,
         granteeAddr,
@@ -147,7 +147,7 @@ router.post(
       const signer = getAdminKeypair();
       const sharedIds = getSharedObjectIds();
 
-      const tx = buildRevokeAccessPTB(sharedIds, historyId, granteeAddr);
+      const tx = await buildRevokeAccessPTB(sharedIds, historyId, granteeAddr);
       const result = await executeTx(client, tx, signer);
 
       res.json({

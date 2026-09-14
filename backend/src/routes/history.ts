@@ -9,14 +9,13 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
-import { getSuiClient, getAdminKeypair, getSuiObject } from '../sui/client';
+import { getSuiClient, getAdminKeypair, getSuiObject, getSuiDynamicFields } from '../sui/client';
 import {
   buildAddEntryPTB,
   buildRevokeEntryPTB,
   buildReadFullHistoryPTB,
   buildReadEntryPTB,
   executeTx,
-  dryRunTx,
 } from '../sui/transactions';
 import {
   getSharedObjectIds,
@@ -40,7 +39,7 @@ const HistoryIdParamSchema = z.object({
 const AddEntrySchema = z.object({
   issuerAddr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address'),
   entryType: z.number().int().min(0).max(6), // Matches entry type codes
-  offChainRef: z.string().min(1), // IPFS CID or similar URI
+  offChainRef: z.string().min(1), // Walrus blob ID
   contentHash: z.string().min(1), // Hex-encoded SHA-256
 });
 
@@ -81,27 +80,25 @@ router.post(
         : contentHash;
       const hashArray = hashBytes.match(/.{1,2}/g)?.map((b: string) => parseInt(b, 16)) || [];
 
-      const tx = buildAddEntryPTB(
+      const tx = await buildAddEntryPTB(
         sharedIds,
         historyId,
         entryType,
         offChainRef,
         hashArray,
         {
-          history: await getSharedObjectRef(client, historyId, 'MedicalHistory', true),
+          history: await getSharedObjectRef(historyId, 'MedicalHistory', true),
           institutionRegistry: await getSharedObjectRef(
-            client,
             sharedIds.institutionRegistry,
             'InstitutionRegistry',
             false
           ),
           auditLog: await getSharedObjectRef(
-            client,
             sharedIds.auditLog,
             'AuditLog',
             true
           ),
-          clock: await getSharedObjectRef(client, '0x6', 'Clock', false),
+          clock: await getSharedObjectRef('0x6', 'Clock', false),
         }
       );
 
@@ -109,7 +106,7 @@ router.post(
 
       // Parse the EntryAdded event
       const entryAddedEvent = parseEvents(
-        result.effects?.events || [],
+        result.events || result.effects?.events || [],
         'EntryAdded'
       );
       const entryId = entryAddedEvent[0]?.entry_id;
@@ -118,7 +115,7 @@ router.post(
         success: true,
         digest: result.digest,
         historyId,
-        entryId: entryId ? Number(entryId) : undefined,
+        entryId: entryId === undefined || entryId === null ? undefined : Number(entryId),
         entryType,
       });
     } catch (err) {
@@ -142,7 +139,7 @@ router.post(
       const signer = getAdminKeypair();
       const sharedIds = getSharedObjectIds();
 
-      const tx = buildRevokeEntryPTB(sharedIds, historyId, entryId);
+      const tx = await buildRevokeEntryPTB(sharedIds, historyId, entryId);
       const result = await executeTx(client, tx, signer);
 
       res.json({
@@ -189,13 +186,20 @@ router.get(
       const fields = (historyObj.data as any).content?.fields;
       const owner = fields?.owner;
       const entryCount = fields?.entry_count;
-      const entries = fields?.entries?.fields?.contents || [];
+      const entriesTableId = fields?.entries?.fields?.id?.id;
+      const entries = fields?.entries?.fields?.contents?.length
+        ? fields.entries.fields.contents
+        : entriesTableId
+          ? await getSuiDynamicFields(entriesTableId)
+          : [];
 
       // Parse entries from the table format
       const parsedEntries = entries.map((entry: any) => {
-        const e = entry.fields?.value?.fields || entry.fields?.value;
+        const key = entry.fields?.key ?? entry.name?.value;
+        const dynamicValue = entry.value?.contents?.json;
+        const e = entry.fields?.value?.fields || entry.fields?.value || dynamicValue?.fields || dynamicValue;
         return {
-          id: Number(entry.fields?.key),
+          id: Number(key),
           issuer: e?.issuer,
           entryType: e?.entry_type,
           offChainRef: e?.off_chain_ref
@@ -220,20 +224,35 @@ router.get(
         [historyId]
       );
       const importedById = new Map(
-        importedRows.map((row) => [row.entry_id, {
+        importedRows.map((row) => [Number(row.entry_id), {
           sourceName: row.source_name,
           record: row.record,
+          createdAt: row.created_at,
         }])
       );
+
+      // Sui GraphQL does not expose Table rows for this object. The import
+      // table is the persisted display projection for patient-uploaded data.
+      const visibleEntries = parsedEntries.length > 0
+        ? parsedEntries
+        : importedRows.map((row) => ({
+          id: Number(row.entry_id),
+          issuer: owner,
+          entryType: Number(row.record?.entryType ?? row.record?.entry_type ?? row.record?.type ?? 0),
+          offChainRef: null,
+          contentHash: null,
+          timestampMs: row.created_at,
+          revoked: false,
+        }));
 
       res.json({
         success: true,
         historyId,
         owner,
         entryCount: entryCount ? Number(entryCount) : 0,
-        entries: parsedEntries.map((entry: any) => ({
+        entries: visibleEntries.map((entry: any) => ({
           ...entry,
-          import: importedById.get(entry.id) || null,
+          import: importedById.get(Number(entry.id)) || null,
         })),
         metadata: rows[0] || null,
       });

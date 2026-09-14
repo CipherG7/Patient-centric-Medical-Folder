@@ -13,7 +13,6 @@ export const config = {
 
   // Sui
   SUI_NETWORK: process.env.SUI_NETWORK || 'testnet',
-  SUI_RPC_URL: process.env.SUI_RPC_URL || undefined,
   SUI_GRAPHQL_URL:
     process.env.SUI_GRAPHQL_URL || 'https://graphql.testnet.sui.io/graphql',
   SUI_GRPC_URL:
@@ -24,6 +23,14 @@ export const config = {
 
   // Admin wallet private key (hex-encoded)
   ADMIN_PRIVATE_KEY: process.env.ADMIN_PRIVATE_KEY || '',
+
+  // Shared object IDs (created by each module's init() at publish time —
+  // must be re-captured from `sui client publish` output any time the
+  // package is republished, since a new publish creates fresh shared objects).
+  SHARED_INSTITUTION_REGISTRY: process.env.SHARED_INSTITUTION_REGISTRY || '',
+  SHARED_PATIENT_REGISTRY: process.env.SHARED_PATIENT_REGISTRY || '',
+  SHARED_PERMISSION_STORE: process.env.SHARED_PERMISSION_STORE || '',
+  SHARED_AUDIT_LOG: process.env.SHARED_AUDIT_LOG || '',
 
   // PostgreSQL
   DATABASE_URL:
@@ -37,14 +44,17 @@ export const config = {
   /** Application-wide salt for PBKDF2 key derivation. Change this to invalidate all wrapped keys. */
   ENCRYPTION_SALT: process.env.ENCRYPTION_SALT || 'medical-history-v1',
 
-  // IPFS / Storage
-  IPFS_ENABLED: process.env.IPFS_ENABLED === 'true',
-  /** Kubo RPC API URL, or "local" for filesystem fallback. */
-  IPFS_API_URL: process.env.IPFS_API_URL || 'local',
-  /** Public IPFS gateway for downloads (e.g. https://ipfs.io/ipfs). */
-  IPFS_GATEWAY_URL: process.env.IPFS_GATEWAY_URL || '',
-  /** Directory for local IPFS file storage fallback. */
-  IPFS_LOCAL_DIR: process.env.IPFS_LOCAL_DIR || './data/ipfs',
+  // Walrus storage
+  WALRUS_ENABLED: process.env.WALRUS_ENABLED !== 'false',
+  WALRUS_PUBLISHER_URL:
+    process.env.WALRUS_PUBLISHER_URL ||
+    'https://publisher.walrus-testnet.walrus.space',
+  WALRUS_AGGREGATOR_URL:
+    process.env.WALRUS_AGGREGATOR_URL ||
+    'https://aggregator.walrus-testnet.walrus.space',
+  WALRUS_EPOCHS: parseInt(process.env.WALRUS_EPOCHS || '5', 10),
+  /** Directory for development-only local storage when Walrus is disabled. */
+  WALRUS_LOCAL_DIR: process.env.WALRUS_LOCAL_DIR || './data/walrus',
 } as const;
 
 // Validate critical config at startup
@@ -52,6 +62,10 @@ export function validateConfig(): void {
   const missing: string[] = [];
   if (!config.PACKAGE_ID) missing.push('PACKAGE_ID');
   if (!config.ADMIN_PRIVATE_KEY) missing.push('ADMIN_PRIVATE_KEY');
+  if (!config.SHARED_PATIENT_REGISTRY) missing.push('SHARED_PATIENT_REGISTRY');
+  if (!config.SHARED_INSTITUTION_REGISTRY) missing.push('SHARED_INSTITUTION_REGISTRY');
+  if (!config.SHARED_PERMISSION_STORE) missing.push('SHARED_PERMISSION_STORE');
+  if (!config.SHARED_AUDIT_LOG) missing.push('SHARED_AUDIT_LOG');
 
   if (missing.length > 0) {
     console.warn(

@@ -67,7 +67,7 @@ export function LabTechDashboard() {
     setResult(null);
 
     try {
-      // Step 1: Upload document to IPFS via backend
+      // Step 1: Encrypt and upload document to Walrus via backend
       const uploadResponse = await documentApi.upload(file, historyId, 0, submittedAddr);
 
       // Step 2: For demo, we use a dummy entry ID since we don't know it yet
