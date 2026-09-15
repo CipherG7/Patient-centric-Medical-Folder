@@ -3,6 +3,7 @@ import { useActiveAccount } from '@/lib/auth';
 import { usePatientHistory } from '@/hooks/use-patient';
 import { useFullHistory } from '@/hooks/use-history';
 import { EntryCard } from '@/components/EntryCard';
+import { WalletAddress } from '@/components/WalletAddress';
 import { CardSkeleton } from '@/components/LoadingSkeleton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { shortenAddress } from '@/lib/utils';
@@ -29,7 +30,7 @@ export function DoctorDashboard() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmittedAddr(searchAddr);
+    setSubmittedAddr(searchAddr.trim());
   };
 
   const isLoading = lookupLoading || historyLoading;
@@ -51,7 +52,7 @@ export function DoctorDashboard() {
             Doctor / Clinician Dashboard
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {account ? shortenAddress(account.address) : 'Not connected'}
+            {account ? <WalletAddress address={account.address} /> : 'Not connected'}
           </p>
         </div>
       </div>
@@ -113,7 +114,7 @@ export function DoctorDashboard() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-slate-800">
-                    Patient: {shortenAddress(submittedAddr)}
+                    Patient: <WalletAddress address={submittedAddr} />
                   </p>
                   <p className="text-xs text-gray-500">
                     History ID: {shortenAddress(historyId, 8)}

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useActiveAccount } from '@/lib/auth';
 import { useInstitutions, useRegisterInstitution, useRevokeInstitution, useReinstateInstitution } from '@/hooks/use-institutions';
 import { StatusBadge } from '@/components/StatusBadge';
+import { WalletAddress } from '@/components/WalletAddress';
 import { CardSkeleton } from '@/components/LoadingSkeleton';
 import { shortenAddress, formatTimestamp } from '@/lib/utils';
 import {
@@ -248,7 +249,7 @@ export function PlatformAdminDashboard() {
                       <StatusBadge variant="verified" label="Verified" />
                     </div>
                     <p className="text-xs text-gray-500 font-mono truncate mt-0.5">
-                      {shortenAddress(inst.institution_addr)}
+                      <WalletAddress address={inst.institution_addr} />
                     </p>
                     <p className="text-xs text-gray-400">License: {inst.license_number}</p>
                   </div>

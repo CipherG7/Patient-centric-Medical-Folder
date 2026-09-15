@@ -3,6 +3,7 @@ import { usePatientHistory } from '@/hooks/use-patient';
 import { useAuditLog } from '@/hooks/use-audit';
 import { PageSkeleton } from '@/components/LoadingSkeleton';
 import { StatusBadge } from '@/components/StatusBadge';
+import { WalletAddress } from '@/components/WalletAddress';
 import { shortenAddress, formatTimestamp } from '@/lib/utils';
 import { AUDIT_ACTION_LABELS, AUDIT_ACTION_ICONS, AuditAction } from '@/types';
 import {
@@ -161,7 +162,7 @@ export function PatientAudit() {
                     </div>
                     <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1.5">
                       <User className="h-3 w-3" />
-                      {shortenAddress(event.actor)}
+                      <WalletAddress address={event.actor} />
                     </p>
                   </div>
 

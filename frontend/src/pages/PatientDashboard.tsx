@@ -5,9 +5,10 @@ import { useFullHistory } from '@/hooks/use-history';
 import { useAuditLog } from '@/hooks/use-audit';
 import { patientImportApi } from '@/lib/api';
 import { EntryCard } from '@/components/EntryCard';
+import { WalletAddress } from '@/components/WalletAddress';
 import { StatusBadge } from '@/components/StatusBadge';
 import { PageSkeleton, CardSkeleton } from '@/components/LoadingSkeleton';
-import { shortenAddress, formatTimestamp } from '@/lib/utils';
+import { formatTimestamp } from '@/lib/utils';
 import type { HistoryEntry } from '@/types';
 import {
   History,
@@ -121,7 +122,7 @@ export function PatientDashboard() {
             Patient Dashboard
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {shortenAddress(patientAddr)}
+            <WalletAddress address={patientAddr} />
           </p>
         </div>
         <StatusBadge variant={historyId ? 'verified' : 'pending'} label={historyId ? 'History Active' : 'No History'} />
@@ -352,7 +353,7 @@ export function PatientDashboard() {
                             <span className="font-medium">{event.actionLabel}</span>
                           </p>
                           <p className="text-xs text-gray-500 mt-0.5">
-                            Actor: {shortenAddress(event.actor)}
+                            Actor: <WalletAddress address={event.actor} />
                             {event.entryId !== null && ` · Entry #${event.entryId}`}
                           </p>
                         </div>

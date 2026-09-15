@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { formatTimestamp, shortenAddress, cn } from '@/lib/utils';
 import { ENTRY_TYPE_LABELS, ENTRY_TYPE_ICONS, type HistoryEntry, EntryType } from '@/types';
 import { StatusBadge } from './StatusBadge';
+import { WalletAddress } from './WalletAddress';
 import {
   Stethoscope,
   FlaskConical,
@@ -98,7 +99,7 @@ export function EntryCard({ entry, entryId, index, onVerify, className }: EntryC
             <p className="text-xs text-gray-500 mt-0.5">
               {formatTimestamp(entry.timestampMs)}
               {' · '}
-              by {shortenAddress(entry.issuer)}
+              by <WalletAddress address={entry.issuer} />
             </p>
           </div>
         </div>

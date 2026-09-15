@@ -4,6 +4,7 @@ import { usePatientHistory } from '@/hooks/use-patient';
 import { useFullHistory } from '@/hooks/use-history';
 import { useGrantFullAccess, useGrantPartialAccess, useRevokeAccess } from '@/hooks/use-access';
 import { StatusBadge } from '@/components/StatusBadge';
+import { WalletAddress } from '@/components/WalletAddress';
 import { CardSkeleton } from '@/components/LoadingSkeleton';
 import { shortenAddress, formatTimestamp } from '@/lib/utils';
 import { GrantScope, type HistoryEntry } from '@/types';
@@ -284,7 +285,7 @@ export function PatientConsent() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium text-slate-800">
-                        {shortenAddress(grant.granteeAddr)}
+                        <WalletAddress address={grant.granteeAddr} />
                       </span>
                       <StatusBadge
                         variant={isExpired ? 'expired' : 'granted'}

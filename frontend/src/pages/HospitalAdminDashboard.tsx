@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useActiveAccount } from '@/lib/auth';
 import { PageSkeleton } from '@/components/LoadingSkeleton';
 import { StatusBadge } from '@/components/StatusBadge';
-import { shortenAddress } from '@/lib/utils';
+import { WalletAddress } from '@/components/WalletAddress';
 import {
   Building2,
   Users,
@@ -95,7 +95,7 @@ export function HospitalAdminDashboard() {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-slate-800">City General Hospital</p>
             <p className="text-xs text-gray-500">
-              License: MED-HOSP-2024-001 · {account ? shortenAddress(account.address) : 'Not connected'}
+              License: MED-HOSP-2024-001 · {account ? <WalletAddress address={account.address} /> : 'Not connected'}
             </p>
           </div>
           <StatusBadge variant="verified" label="Verified Institution" />
@@ -185,7 +185,7 @@ export function HospitalAdminDashboard() {
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-800">{staff.name}</p>
                     <p className="text-xs text-gray-500 font-mono truncate">
-                      {shortenAddress(staff.address)}
+                      <WalletAddress address={staff.address} />
                     </p>
                   </div>
                 </div>

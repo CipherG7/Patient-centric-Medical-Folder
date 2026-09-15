@@ -4,6 +4,7 @@ import { usePatientHistory } from '@/hooks/use-patient';
 import { useAddEntry } from '@/hooks/use-history';
 import { documentApi } from '@/lib/api';
 import { StatusBadge } from '@/components/StatusBadge';
+import { WalletAddress } from '@/components/WalletAddress';
 import { CardSkeleton } from '@/components/LoadingSkeleton';
 import { shortenAddress } from '@/lib/utils';
 import { ENTRY_TYPE_LABELS, EntryType } from '@/types';
@@ -103,7 +104,7 @@ export function LabTechDashboard() {
             Lab Tech / Pharmacist Dashboard
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {account ? shortenAddress(account.address) : 'Not connected'}
+            {account ? <WalletAddress address={account.address} /> : 'Not connected'}
           </p>
         </div>
       </div>
