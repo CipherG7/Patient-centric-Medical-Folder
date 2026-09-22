@@ -9,6 +9,7 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
+import crypto from 'crypto';
 import { getSuiClient, getAdminKeypair, getSuiObject, getSuiDynamicFields } from '../sui/client';
 import {
   buildAddEntryPTB,
@@ -25,7 +26,7 @@ import {
 } from '../utils/sui-helpers';
 import { AppError } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
-import { apiKeyAuth, optionalAuth } from '../middleware/auth';
+import { apiKeyAuth, requireRole } from '../middleware/auth';
 import { getDb } from '../db';
 
 const router = Router();
@@ -37,7 +38,7 @@ const HistoryIdParamSchema = z.object({
 });
 
 const AddEntrySchema = z.object({
-  issuerAddr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address'),
+  issuerAddr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address').optional(),
   entryType: z.number().int().min(0).max(6), // Matches entry type codes
   offChainRef: z.string().min(1), // Walrus blob ID
   contentHash: z.string().min(1), // Hex-encoded SHA-256
@@ -61,11 +62,13 @@ const EntryIdParamSchema = z.object({
 router.post(
   '/:historyId/entry',
   apiKeyAuth,
+  requireRole('doctor', 'lab_tech', 'pharmacist', 'hospital_admin'),
   validate({ params: HistoryIdParamSchema, body: AddEntrySchema }),
   async (req, res, next) => {
     try {
       const { historyId } = req.params;
-      const { issuerAddr, entryType, offChainRef, contentHash } = req.body;
+      const { entryType, offChainRef, contentHash } = req.body;
+      const issuerAddr = req.user!.address;
       const client = getSuiClient();
       const signer = getAdminKeypair();
       const sharedIds = getSharedObjectIds();
@@ -130,6 +133,7 @@ router.post(
 router.post(
   '/:historyId/revoke-entry',
   apiKeyAuth,
+  requireRole('patient'),
   validate({ params: HistoryIdParamSchema, body: RevokeEntrySchema }),
   async (req, res, next) => {
     try {
@@ -161,7 +165,7 @@ router.post(
  */
 router.get(
   '/:historyId',
-  optionalAuth,
+  apiKeyAuth,
   validate({ params: HistoryIdParamSchema }),
   async (req, res, next) => {
     try {
@@ -239,8 +243,8 @@ router.get(
           id: Number(row.entry_id),
           issuer: owner,
           entryType: Number(row.record?.entryType ?? row.record?.entry_type ?? row.record?.type ?? 0),
-          offChainRef: null,
-          contentHash: null,
+          offChainRef: `patient-import://${historyId}/${row.entry_id}`,
+          contentHash: crypto.createHash('sha256').update(JSON.stringify(row.record)).digest('hex'),
           timestampMs: row.created_at,
           revoked: false,
         }));
@@ -267,7 +271,7 @@ router.get(
  */
 router.get(
   '/:historyId/entry/:entryId',
-  optionalAuth,
+  apiKeyAuth,
   validate({ params: EntryIdParamSchema }),
   async (req, res, next) => {
     try {

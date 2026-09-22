@@ -1,5 +1,7 @@
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useActiveAccount } from '@/lib/auth';
+import { useCurrentAccount, useSignPersonalMessage } from '@mysten/dapp-kit';
+import { authApi } from '@/lib/api';
 import { roleLabel } from '@/lib/utils';
 import type { UserRole } from '@/types';
 import { Activity, Shield, User, Stethoscope, FlaskConical, Building2, ChevronRight, ArrowLeft } from 'lucide-react';
@@ -16,18 +18,49 @@ const roles: { value: UserRole; icon: React.ReactNode; description: string }[] =
 
 export function RoleSelection() {
   const [selectedRole, setSelectedRole] = useState<UserRole>('patient');
+  const [authError, setAuthError] = useState('');
+  const [authenticating, setAuthenticating] = useState(false);
   const navigate = useNavigate();
   const account = useActiveAccount();
+  const walletAccount = useCurrentAccount();
+  const signPersonalMessage = useSignPersonalMessage();
 
   if (!account) return <Navigate to="/" replace />;
 
-  const handleContinue = () => {
-    sessionStorage.setItem('selectedRole', selectedRole);
-    navigate('/dashboard', { state: { role: selectedRole } });
+  const handleContinue = async () => {
+    if (!walletAccount) {
+      setAuthError('Connect the wallet that belongs to this person before continuing.');
+      return;
+    }
+    setAuthenticating(true);
+    setAuthError('');
+    try {
+      const challenge = await authApi.challenge(walletAccount.address);
+      const signed = await signPersonalMessage.mutateAsync({
+        message: new TextEncoder().encode(challenge.message),
+        account: walletAccount,
+      });
+      const session = await authApi.verify(
+        walletAccount.address,
+        challenge.message,
+        signed.signature,
+        selectedRole
+      );
+      localStorage.setItem('auth_session', session.token);
+      localStorage.setItem('auth_role', session.role);
+      sessionStorage.setItem('selectedRole', session.role);
+      navigate('/dashboard', { state: { role: session.role } });
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Wallet authentication failed');
+    } finally {
+      setAuthenticating(false);
+    }
   };
 
   const handleBackToLogin = () => {
     sessionStorage.removeItem('selectedRole');
+    localStorage.removeItem('auth_session');
+    localStorage.removeItem('auth_role');
     navigate('/', { replace: true, state: { stayOnLogin: true } });
   };
 
@@ -70,7 +103,10 @@ export function RoleSelection() {
               </button>
             ))}
           </div>
-          <button onClick={handleContinue} className="btn-primary mt-6 w-full">Continue to dashboard</button>
+          {authError && <p className="mt-4 text-center text-xs text-red-600">{authError}</p>}
+          <button onClick={handleContinue} disabled={authenticating} className="btn-primary mt-6 w-full">
+            {authenticating ? 'Authenticating wallet…' : 'Continue to dashboard'}
+          </button>
         </div>
       </div>
     </div>

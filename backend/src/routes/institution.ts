@@ -20,7 +20,7 @@ import {
 import { getSharedObjectIds } from '../utils/sui-helpers';
 import { AppError } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
-import { apiKeyAuth } from '../middleware/auth';
+import { apiKeyAuth, requireRole } from '../middleware/auth';
 import { getDb } from '../db';
 
 const router = Router();
@@ -29,12 +29,18 @@ const router = Router();
 
 const RegisterSchema = z.object({
   institutionAddr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address'),
+  hospitalAdminAddr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid hospital admin wallet address').optional(),
   name: z.string().min(1).max(256),
   licenseNumber: z.string().min(1).max(128),
 });
 
 const RevokeSchema = z.object({
   institutionAddr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address'),
+});
+
+const LinkAdminSchema = z.object({
+  institutionAddr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address'),
+  hospitalAdminAddr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid hospital admin wallet address'),
 });
 
 const ReinstateSchema = z.object({
@@ -53,16 +59,12 @@ const AddrParamSchema = z.object({
  */
 router.post(
   '/register',
-  (_req, res) => {
-    res.status(403).json({
-      error: 'Institution registration is temporarily disabled',
-    });
-  },
   apiKeyAuth,
+  requireRole('platform_admin'),
   validate({ body: RegisterSchema }),
   async (req, res, next) => {
     try {
-      const { institutionAddr, name, licenseNumber } = req.body;
+      const { institutionAddr, hospitalAdminAddr, name, licenseNumber } = req.body;
       const client = getSuiClient();
       const signer = getAdminKeypair();
       const sharedIds = getSharedObjectIds();
@@ -99,12 +101,56 @@ router.post(
         [institutionAddr, name, licenseNumber]
       );
 
+      if (hospitalAdminAddr) {
+        await db.query(
+          `INSERT INTO user_profiles (user_address, institution_addr, role)
+           VALUES ($1, $2, 'hospital_admin')
+           ON CONFLICT (user_address)
+           DO UPDATE SET institution_addr = $2, role = 'hospital_admin', updated_at = now()`,
+          [hospitalAdminAddr.toLowerCase(), institutionAddr.toLowerCase()]
+        );
+      }
+
       res.status(201).json({
         success: true,
         digest: result.digest,
         institutionAddr,
+        hospitalAdminAddr: hospitalAdminAddr || null,
         name,
       });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/** Link an existing institution to a hospital-admin wallet. */
+router.post(
+  '/link-admin',
+  apiKeyAuth,
+  requireRole('platform_admin'),
+  validate({ body: LinkAdminSchema }),
+  async (req, res, next) => {
+    try {
+      const { institutionAddr, hospitalAdminAddr } = req.body;
+      const db = getDb();
+      const institution = await db.query(
+        'SELECT 1 FROM institution_profiles WHERE institution_addr = $1',
+        [institutionAddr.toLowerCase()]
+      );
+      if (institution.rows.length === 0) {
+        throw new AppError('Institution is not registered in the platform', 404);
+      }
+
+      await db.query(
+        `INSERT INTO user_profiles (user_address, institution_addr, role)
+         VALUES ($1, $2, 'hospital_admin')
+         ON CONFLICT (user_address)
+         DO UPDATE SET institution_addr = $2, role = 'hospital_admin', updated_at = now()`,
+        [hospitalAdminAddr.toLowerCase(), institutionAddr.toLowerCase()]
+      );
+
+      res.json({ success: true, institutionAddr, hospitalAdminAddr });
     } catch (err) {
       next(err);
     }
@@ -117,6 +163,7 @@ router.post(
 router.post(
   '/revoke',
   apiKeyAuth,
+  requireRole('platform_admin'),
   validate({ body: RevokeSchema }),
   async (req, res, next) => {
     try {
@@ -150,6 +197,7 @@ router.post(
 router.post(
   '/reinstate',
   apiKeyAuth,
+  requireRole('platform_admin'),
   validate({ body: ReinstateSchema }),
   async (req, res, next) => {
     try {

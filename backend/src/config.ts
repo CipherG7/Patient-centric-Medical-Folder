@@ -36,10 +36,6 @@ export const config = {
   DATABASE_URL:
     process.env.DATABASE_URL || 'postgresql://localhost:5432/medical_history',
 
-  // Auth
-  API_KEY: process.env.API_KEY || 'dev-api-key',
-  JWT_SECRET: process.env.JWT_SECRET || 'dev-jwt-secret',
-
   // Encryption
   /** Application-wide salt for PBKDF2 key derivation. Change this to invalidate all wrapped keys. */
   ENCRYPTION_SALT: process.env.ENCRYPTION_SALT || 'medical-history-v1',

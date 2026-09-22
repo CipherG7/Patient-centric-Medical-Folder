@@ -23,7 +23,7 @@ import { decryptDocument, verifyContentHash } from '../encryption';
 import { getDb } from '../db';
 import { AppError } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
-import { apiKeyAuth, optionalAuth } from '../middleware/auth';
+import { apiKeyAuth } from '../middleware/auth';
 
 const router = Router();
 
@@ -47,7 +47,7 @@ const upload = multer({
 const UploadBodySchema = z.object({
   historyId: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui object ID'),
   entryId: z.number().int().min(0),
-  ownerAddr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address'),
+  ownerAddr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address').optional(),
 });
 
 const DownloadParamsSchema = z.object({
@@ -84,7 +84,8 @@ router.post(
         throw new AppError('Document file is required (multipart/form-data field: "document")', 400);
       }
 
-      const { historyId, entryId, ownerAddr } = req.body;
+      const { historyId, entryId } = req.body;
+      const ownerAddr = req.user!.address;
 
       // Process the document through the full pipeline
       const result = await processDocument(
@@ -122,7 +123,7 @@ router.post(
  */
 router.get(
   '/:cid',
-  optionalAuth,
+  apiKeyAuth,
   validate({ params: DownloadParamsSchema }),
   async (req, res, next) => {
     try {

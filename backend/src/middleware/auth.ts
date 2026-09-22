@@ -1,14 +1,13 @@
-/**
- * Authentication middleware.
- *
- * For this demo we use a simple API key passed in the `x-api-key` header.
- * In production this would be replaced with JWT-based session tokens or
- * OAuth2, and the wallet address would be extracted from the signed
- * message (using Sui Wallet's personal_sign / signMessage).
- */
+/** Session authentication backed by a verified wallet signature. */
 
 import type { Request, Response, NextFunction } from 'express';
-import { config } from '../config';
+import { getDb } from '../db';
+import { AppError } from './errorHandler';
+
+export type UserRole = 'patient' | 'doctor' | 'lab_tech' | 'pharmacist' | 'hospital_admin' | 'platform_admin';
+
+// This deployment wallet is allowed to use both the patient and platform-admin workspaces.
+export const DUAL_ROLE_ADDRESS = '0xe148af1066ce54c8cb9e4e6c3b4d57596d677c9060ab562f13dbb36b575675cf';
 
 /**
  * Extend Express Request to include authenticated user info.
@@ -18,51 +17,66 @@ declare global {
     interface Request {
       user?: {
         address: string;
-        role: 'patient' | 'doctor' | 'admin';
+        role: UserRole;
       };
     }
   }
 }
 
-/**
- * Demo API key authentication.
- * Checks `x-api-key` header against configured key.
- */
-export function apiKeyAuth(req: Request, res: Response, next: NextFunction): void {
-  const apiKey = req.headers['x-api-key'] as string | undefined;
-
-  if (!apiKey || apiKey !== config.API_KEY) {
+/** Resolve the bearer token to a non-expired, database-backed wallet session. */
+export async function apiKeyAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  if (!token) {
     res.status(401).json({
       error: 'Unauthorized',
-      message: 'Valid x-api-key header is required.',
+      message: 'A valid wallet session is required.',
     });
     return;
   }
 
-  // In a real system, we'd look up the user from the DB here.
-  // For the demo, attach a generic admin user.
-  req.user = {
-    address: '0x0', // Will be overridden per-request in production
-    role: 'admin',
-  };
+  const { rows } = await getDb().query(
+    `SELECT s.user_address, COALESCE(s.role, p.role) AS role FROM sessions s
+     JOIN user_profiles p ON p.user_address = s.user_address
+     WHERE s.token = $1 AND s.expires_at > now()`,
+    [token]
+  );
+  if (rows.length === 0) {
+    res.status(401).json({ error: 'Unauthorized', message: 'Session is invalid or expired.' });
+    return;
+  }
+
+  req.user = { address: rows[0].user_address, role: rows[0].role };
 
   next();
 }
 
-/**
- * Optional auth — attaches user info if a valid API key is provided,
- * but does not reject unauthenticated requests.
- */
-export function optionalAuth(req: Request, res: Response, next: NextFunction): void {
-  const apiKey = req.headers['x-api-key'] as string | undefined;
-
-  if (apiKey && apiKey === config.API_KEY) {
-    req.user = {
-      address: '0x0',
-      role: 'admin',
-    };
-  }
-
+/** Attach a valid session when present without requiring one. */
+export async function optionalAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  if (!token) return next();
+  const { rows } = await getDb().query(
+    `SELECT s.user_address, COALESCE(s.role, p.role) AS role FROM sessions s
+     JOIN user_profiles p ON p.user_address = s.user_address
+     WHERE s.token = $1 AND s.expires_at > now()`,
+    [token]
+  );
+  if (rows.length > 0) req.user = { address: rows[0].user_address, role: rows[0].role };
   next();
+}
+
+export function requireRole(...roles: UserRole[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      res.status(403).json({ error: 'Forbidden', message: 'Your assigned role cannot perform this action.' });
+      return;
+    }
+    next();
+  };
+}
+
+export function requireUserAddress(address: string, req: Request): void {
+  if (!req.user || req.user.address.toLowerCase() !== address.toLowerCase()) {
+    throw new AppError('The requested wallet address does not belong to the authenticated user', 403);
+  }
 }
 

@@ -10,6 +10,7 @@ import historyRoutes from './history';
 import accessRoutes from './access';
 import auditRoutes from './audit';
 import documentRoutes from './documents';
+import authRoutes from './auth';
 
 const router = Router();
 
@@ -23,6 +24,7 @@ router.get('/health', (_req, res) => {
 });
 
 // Mount routes
+router.use('/auth', authRoutes);
 router.use('/institutions', institutionRoutes);
 router.use('/patients', patientRoutes);
 router.use('/history', historyRoutes);

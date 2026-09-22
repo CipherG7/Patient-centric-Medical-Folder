@@ -4,7 +4,10 @@
  */
 
 const API_BASE = (import.meta as any).env?.VITE_API_BASE || '/api';
-const API_KEY = (import.meta as any).env?.VITE_API_KEY || 'dev-api-key';
+
+function getSessionToken(): string | null {
+  return typeof window === 'undefined' ? null : localStorage.getItem('auth_session');
+}
 
 /**
  * Generic fetch wrapper with error handling.
@@ -16,9 +19,10 @@ async function request<T>(
   extraHeaders?: Record<string, string>
 ): Promise<T> {
   const headers: Record<string, string> = {
-    'x-api-key': API_KEY,
     ...extraHeaders,
   };
+  const token = getSessionToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   if (body && !(body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
@@ -31,12 +35,37 @@ async function request<T>(
   });
 
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== 'undefined') {
+      localStorage.removeItem('auth_session');
+      localStorage.removeItem('auth_role');
+    }
     const errorData = await response.json().catch(() => ({ error: response.statusText }));
     throw new Error(errorData.error || `Request failed: ${response.status}`);
   }
 
+  if (response.status === 204) return undefined as T;
   return response.json();
 }
+
+export interface AuthChallengeResponse {
+  message: string;
+  expiresAt: string;
+}
+
+export interface AuthSessionResponse {
+  token: string;
+  address: string;
+  role: string;
+  expiresAt: string;
+}
+
+export const authApi = {
+  challenge: (address: string) =>
+    request<AuthChallengeResponse>('POST', '/auth/challenge', { address }),
+  verify: (address: string, message: string, signature: string, role: string) =>
+    request<AuthSessionResponse>('POST', '/auth/verify', { address, message, signature, role }),
+  logout: () => request<void>('POST', '/auth/logout'),
+};
 
 // ─── Patient endpoints ────────────────────────────────────
 
@@ -60,6 +89,7 @@ export interface PatientProfileResponse {
     user_address: string;
     display_name: string | null;
     email: string | null;
+    institution_addr: string | null;
     role: string;
     created_at: string;
     updated_at: string;
@@ -190,6 +220,7 @@ export interface RegisterInstitutionResponse {
   success: boolean;
   digest: string;
   institutionAddr: string;
+  hospitalAdminAddr: string | null;
   name: string;
 }
 
@@ -205,11 +236,11 @@ export interface InstitutionListResponse {
 }
 
 export const institutionApi = {
-  register: (institutionAddr: string, name: string, licenseNumber: string, adminCapId: string) =>
+  register: (institutionAddr: string, name: string, licenseNumber: string, adminCapId: string, hospitalAdminAddr?: string) =>
     request<RegisterInstitutionResponse>(
       'POST',
       '/institutions/register',
-      { institutionAddr, name, licenseNumber },
+      { institutionAddr, hospitalAdminAddr: hospitalAdminAddr || undefined, name, licenseNumber },
       { 'x-admin-cap-id': adminCapId }
     ),
 
@@ -227,6 +258,12 @@ export const institutionApi = {
       '/institutions/reinstate',
       { institutionAddr },
       { 'x-admin-cap-id': adminCapId }
+    ),
+  linkAdmin: (institutionAddr: string, hospitalAdminAddr: string) =>
+    request<{ success: boolean; institutionAddr: string; hospitalAdminAddr: string }>(
+      'POST',
+      '/institutions/link-admin',
+      { institutionAddr, hospitalAdminAddr }
     ),
 
   list: () => request<InstitutionListResponse>('GET', '/institutions'),
@@ -260,7 +297,7 @@ export const documentApi = {
 
     const response = await fetch(`${API_BASE}/documents/upload`, {
       method: 'POST',
-      headers: { 'x-api-key': API_KEY },
+      headers: getSessionToken() ? { Authorization: `Bearer ${getSessionToken()}` } : {},
       body: formData,
     });
 
@@ -292,7 +329,7 @@ export const patientImportApi = {
     if (historyId) formData.append('historyId', historyId);
     const response = await fetch(`${API_BASE}/patients/${patientAddr}/import`, {
       method: 'POST',
-      headers: { 'x-api-key': API_KEY },
+      headers: getSessionToken() ? { Authorization: `Bearer ${getSessionToken()}` } : {},
       body: formData,
     });
     if (!response.ok) {

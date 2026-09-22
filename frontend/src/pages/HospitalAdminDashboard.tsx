@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useActiveAccount } from '@/lib/auth';
+import { usePatientProfile } from '@/hooks/use-patient';
+import { useInstitution } from '@/hooks/use-institutions';
 import { PageSkeleton } from '@/components/LoadingSkeleton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { WalletAddress } from '@/components/WalletAddress';
@@ -32,12 +34,16 @@ const DEMO_STAFF: StaffMember[] = [
 
 export function HospitalAdminDashboard() {
   const account = useActiveAccount();
+  const { data: profile, isLoading: profileLoading } = usePatientProfile(account?.address);
+  const { data: institutionData, isLoading: institutionLoading } = useInstitution(profile?.data.institution_addr || undefined);
   const [staffList, setStaffList] = useState<StaffMember[]>(DEMO_STAFF);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newAddr, setNewAddr] = useState('');
   const [newName, setNewName] = useState('');
   const [newRole, setNewRole] = useState('doctor');
   const [formError, setFormError] = useState('');
+
+  const institution = institutionData?.data;
 
   const handleAddStaff = () => {
     setFormError('');
@@ -93,12 +99,17 @@ export function HospitalAdminDashboard() {
             <Building2 className="h-5 w-5 text-gray-600" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-slate-800">City General Hospital</p>
+            <p className="text-sm font-medium text-slate-800">
+              {profileLoading || institutionLoading ? 'Loading institution...' : institution?.name || 'No institution linked'}
+            </p>
             <p className="text-xs text-gray-500">
-              License: MED-HOSP-2024-001 · {account ? <WalletAddress address={account.address} /> : 'Not connected'}
+              {institution
+                ? <>License: {institution.license_number} · </>
+                : 'Institution link required · '}
+              {account ? <WalletAddress address={account.address} /> : 'Not connected'}
             </p>
           </div>
-          <StatusBadge variant="verified" label="Verified Institution" />
+          <StatusBadge variant={institution ? 'verified' : 'pending'} label={institution ? 'Verified Institution' : 'Not linked'} />
         </div>
       </div>
 

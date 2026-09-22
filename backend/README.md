@@ -17,13 +17,33 @@ REST API backend for the Decentralized Patient-Centric Portable Medical History 
                     └──────────────────┘     └─────────────────┘
 ```
 
-## Key Design Decision: Wallet Strategy
+## Authentication and Wallet Strategy
+
+Protected API calls require a bearer session created by signing a one-time
+wallet challenge:
+
+1. `POST /api/auth/challenge` with `{ "address": "0x..." }`.
+2. Sign the returned `message` with that wallet's personal-message feature.
+3. `POST /api/auth/verify` with the address, message, signature, and assigned role.
+4. Send `Authorization: Bearer <token>` on protected requests.
+
+Patients may establish their own profile on first login. Staff roles must be
+assigned to their wallet in `user_profiles` before they can sign in with that
+role. The selected role is checked against the database; it is not trusted from
+the frontend route or session storage.
+
+## Current Sui Signing Limitation
 
 **This demo uses a backend-held Sui keypair for signing transactions.**
 
 **Why:** The backend signs all transactions on behalf of the admin/operator. This eliminates the need for callers to have a Sui Wallet browser extension installed, making the REST API usable standalone.
 
 **Production recommendation:** The PTB construction code in `src/sui/transactions.ts` stays the same, but signing should be delegated to the client (e.g., Sui Wallet extension via `wallet-standard`). The backend would construct and return a serialised transaction block, and the client would sign and submit it.
+
+Until that migration is completed, the backend relayer remains the on-chain
+transaction sender. REST authentication and authorization are enforced, but
+the on-chain `issuer` is still the relayer address. Do not use this mode for
+real medical data when per-person on-chain attribution is required.
 
 ## Prerequisites
 
@@ -155,7 +175,7 @@ src/
 │   ├── access.ts
 │   └── audit.ts
 ├── middleware/
-│   ├── auth.ts               # API key auth
+│   ├── auth.ts               # Wallet challenge/session auth
 │   ├── validate.ts           # Zod validation
 │   └── errorHandler.ts       # Error handling
 └── utils/

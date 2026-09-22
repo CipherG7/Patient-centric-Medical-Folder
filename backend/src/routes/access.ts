@@ -9,7 +9,7 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
-import { getSuiClient, getAdminKeypair } from '../sui/client';
+import { getSuiClient, getAdminKeypair, getSuiObject } from '../sui/client';
 import {
   buildGrantFullAccessPTB,
   buildGrantPartialAccessPTB,
@@ -23,6 +23,14 @@ import { apiKeyAuth } from '../middleware/auth';
 import { getDb } from '../db';
 
 const router = Router();
+
+async function requireHistoryOwner(historyId: string, address: string): Promise<void> {
+  const history = await getSuiObject(historyId);
+  const owner = history.data?.content?.fields?.owner;
+  if (!owner || owner.toLowerCase() !== address.toLowerCase()) {
+    throw new AppError('Only the patient who owns this history can manage access', 403);
+  }
+}
 
 // ─── Schemas ────────────────────────────────────────────────
 
@@ -59,6 +67,7 @@ router.post(
     try {
       const { historyId } = req.params;
       const { granteeAddr, expiryMs } = req.body;
+      await requireHistoryOwner(historyId, req.user!.address);
       const client = getSuiClient();
       const signer = getAdminKeypair();
       const sharedIds = getSharedObjectIds();
@@ -102,6 +111,7 @@ router.post(
     try {
       const { historyId } = req.params;
       const { granteeAddr, entryIds, expiryMs } = req.body;
+      await requireHistoryOwner(historyId, req.user!.address);
       const client = getSuiClient();
       const signer = getAdminKeypair();
       const sharedIds = getSharedObjectIds();
@@ -143,6 +153,7 @@ router.post(
     try {
       const { historyId } = req.params;
       const { granteeAddr } = req.body;
+      await requireHistoryOwner(historyId, req.user!.address);
       const client = getSuiClient();
       const signer = getAdminKeypair();
       const sharedIds = getSharedObjectIds();

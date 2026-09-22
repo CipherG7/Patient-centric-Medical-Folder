@@ -13,7 +13,7 @@ import { getSuiClient, getSuiObject } from '../sui/client';
 import { getSharedObjectIds, bytesToString } from '../utils/sui-helpers';
 import { AppError } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
-import { optionalAuth } from '../middleware/auth';
+import { apiKeyAuth } from '../middleware/auth';
 
 const router = Router();
 
@@ -47,7 +47,7 @@ function getActionLabel(action: number): string {
  */
 router.get(
   '/:historyId/audit',
-  optionalAuth,
+  apiKeyAuth,
   validate({ params: HistoryIdParamSchema }),
   async (req, res, next) => {
     try {

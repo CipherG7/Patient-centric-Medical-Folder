@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useActiveAccount } from '@/lib/auth';
-import { useInstitutions, useRegisterInstitution, useRevokeInstitution, useReinstateInstitution } from '@/hooks/use-institutions';
+import { useInstitutions, useRegisterInstitution, useRevokeInstitution, useReinstateInstitution, useLinkInstitutionAdmin } from '@/hooks/use-institutions';
 import { StatusBadge } from '@/components/StatusBadge';
 import { WalletAddress } from '@/components/WalletAddress';
 import { CardSkeleton } from '@/components/LoadingSkeleton';
@@ -27,14 +27,17 @@ export function PlatformAdminDashboard() {
   const registerMutation = useRegisterInstitution();
   const revokeMutation = useRevokeInstitution();
   const reinstateMutation = useReinstateInstitution();
+  const linkAdminMutation = useLinkInstitutionAdmin();
 
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [newAddr, setNewAddr] = useState('');
+  const [hospitalAdminAddr, setHospitalAdminAddr] = useState('');
   const [newName, setNewName] = useState('');
   const [newLicense, setNewLicense] = useState('');
   const [adminCapId, setAdminCapId] = useState('');
   const [formError, setFormError] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [adminLinkAddresses, setAdminLinkAddresses] = useState<Record<string, string>>({});
 
   const institutions = institutionsData?.data || [];
 
@@ -49,6 +52,10 @@ export function PlatformAdminDashboard() {
       setFormError('Name and license number are required');
       return;
     }
+    if (hospitalAdminAddr && !hospitalAdminAddr.match(/^0x[0-9a-fA-F]{40,64}$/)) {
+      setFormError('Invalid hospital admin wallet address');
+      return;
+    }
     if (!adminCapId.match(/^0x[0-9a-fA-F]{40,64}$/)) {
       setFormError('Invalid AdminCap object ID');
       return;
@@ -60,9 +67,11 @@ export function PlatformAdminDashboard() {
         name: newName,
         licenseNumber: newLicense,
         adminCapId,
+        hospitalAdminAddr: hospitalAdminAddr || undefined,
       });
 
       setNewAddr('');
+      setHospitalAdminAddr('');
       setNewName('');
       setNewLicense('');
       setShowRegisterForm(false);
@@ -98,6 +107,21 @@ export function PlatformAdminDashboard() {
       console.error('Reinstate failed:', err);
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const handleLinkAdmin = async (institutionAddr: string) => {
+    const hospitalAdminAddr = adminLinkAddresses[institutionAddr]?.trim() || '';
+    if (!hospitalAdminAddr.match(/^0x[0-9a-fA-F]{40,64}$/)) {
+      setFormError('Enter a valid hospital admin wallet address');
+      return;
+    }
+    setFormError('');
+    try {
+      await linkAdminMutation.mutateAsync({ institutionAddr, hospitalAdminAddr });
+      setAdminLinkAddresses((current) => ({ ...current, [institutionAddr]: '' }));
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Unable to link hospital admin');
     }
   };
 
@@ -159,6 +183,20 @@ export function PlatformAdminDashboard() {
               placeholder="0x..."
               className="input font-mono text-sm"
             />
+          </div>
+
+          <div>
+            <label className="label">Hospital Admin Wallet Address</label>
+            <input
+              type="text"
+              value={hospitalAdminAddr}
+              onChange={(e) => setHospitalAdminAddr(e.target.value)}
+              placeholder="0x... (optional)"
+              className="input font-mono text-sm"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              This wallet will be assigned the hospital admin role and linked to this institution.
+            </p>
           </div>
 
           <div>
@@ -252,6 +290,24 @@ export function PlatformAdminDashboard() {
                       <WalletAddress address={inst.institution_addr} />
                     </p>
                     <p className="text-xs text-gray-400">License: {inst.license_number}</p>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        value={adminLinkAddresses[inst.institution_addr] || ''}
+                        onChange={(event) => setAdminLinkAddresses((current) => ({
+                          ...current,
+                          [inst.institution_addr]: event.target.value,
+                        }))}
+                        placeholder="Hospital admin wallet"
+                        className="input h-8 min-w-0 font-mono text-xs"
+                      />
+                      <button
+                        onClick={() => handleLinkAdmin(inst.institution_addr)}
+                        disabled={linkAdminMutation.isPending}
+                        className="btn-outline shrink-0 text-xs"
+                      >
+                        Link admin
+                      </button>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <StatusBadge variant="active" label="Active" />

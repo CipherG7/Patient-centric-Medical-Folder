@@ -25,12 +25,14 @@ export function useRegisterInstitution() {
       name,
       licenseNumber,
       adminCapId,
+      hospitalAdminAddr,
     }: {
       institutionAddr: string;
       name: string;
       licenseNumber: string;
       adminCapId: string;
-    }) => institutionApi.register(institutionAddr, name, licenseNumber, adminCapId),
+      hospitalAdminAddr?: string;
+    }) => institutionApi.register(institutionAddr, name, licenseNumber, adminCapId, hospitalAdminAddr),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['institutions'] });
     },
@@ -55,6 +57,18 @@ export function useReinstateInstitution() {
   return useMutation({
     mutationFn: ({ institutionAddr, adminCapId }: { institutionAddr: string; adminCapId: string }) =>
       institutionApi.reinstate(institutionAddr, adminCapId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['institutions'] });
+    },
+  });
+}
+
+export function useLinkInstitutionAdmin() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ institutionAddr, hospitalAdminAddr }: { institutionAddr: string; hospitalAdminAddr: string }) =>
+      institutionApi.linkAdmin(institutionAddr, hospitalAdminAddr),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['institutions'] });
     },

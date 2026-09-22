@@ -44,6 +44,8 @@ export function EntryCard({ entry, entryId, index, onVerify, className }: EntryC
   const label = ENTRY_TYPE_LABELS[entryType] || `Type ${entry.entryType}`;
   const iconKey = ENTRY_TYPE_ICONS[entryType] || 'file-text';
   const Icon = iconMap[iconKey] || FileText;
+  const formattedTimestamp = formatTimestamp(entry.timestampMs);
+  const hasTimestamp = formattedTimestamp !== 'Unknown date';
 
   const handleVerify = async () => {
     if (!onVerify) return;
@@ -97,8 +99,7 @@ export function EntryCard({ entry, entryId, index, onVerify, className }: EntryC
               )}
             </div>
             <p className="text-xs text-gray-500 mt-0.5">
-              {formatTimestamp(entry.timestampMs)}
-              {' · '}
+              {hasTimestamp && <>{formattedTimestamp} {' · '}</>}
               by <WalletAddress address={entry.issuer} />
             </p>
           </div>
@@ -135,11 +136,15 @@ export function EntryCard({ entry, entryId, index, onVerify, className }: EntryC
         )}
       </div>
 
-      {/* Off-chain reference */}
-      {entry.offChainRef && (
+      {/* Document integrity hash */}
+      {(entry.offChainRef || entry.contentHash) && (
         <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
-          <FileDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span className="truncate font-mono">{entry.offChainRef}</span>
+          {entry.offChainRef && !entry.offChainRef.startsWith('patient-import://') && (
+            <>
+              <FileDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate font-mono">{entry.offChainRef}</span>
+            </>
+          )}
           {entry.contentHash && (
             <span className="text-gray-400 shrink-0">
               SHA-256: {entry.contentHash.slice(0, 8)}…

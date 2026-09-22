@@ -1,5 +1,6 @@
 import { useActiveAccount } from '@/lib/auth';
 import { shortenAddress, roleLabel } from '@/lib/utils';
+import { usePatientProfile, useUpsertProfile } from '@/hooks/use-patient';
 import { StatusBadge } from '@/components/StatusBadge';
 import {
   Settings as SettingsIcon,
@@ -11,11 +12,29 @@ import {
   ExternalLink,
   CheckCircle,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export function Settings() {
   const account = useActiveAccount();
   const [copied, setCopied] = useState(false);
+  const [preferredName, setPreferredName] = useState('');
+  const [saved, setSaved] = useState(false);
+  const { data: profile } = usePatientProfile(account?.address);
+  const { mutate: saveProfile, isPending: saving } = useUpsertProfile();
+
+  useEffect(() => {
+    if (profile?.data.display_name !== undefined && profile.data.display_name !== null) {
+      setPreferredName(profile.data.display_name);
+    }
+  }, [profile?.data.display_name]);
+
+  const handleSaveName = () => {
+    if (!account) return;
+    saveProfile(
+      { patientAddr: account.address, displayName: preferredName.trim() },
+      { onSuccess: () => setSaved(true) }
+    );
+  };
 
   const handleCopyAddress = async () => {
     if (!account) return;
@@ -89,6 +108,31 @@ export function Settings() {
         ) : (
           <p className="text-sm text-gray-500">No wallet connected. Connect via the top bar.</p>
         )}
+      </div>
+
+      {/* Personal preference */}
+      <div className="card space-y-4">
+        <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <User className="h-4 w-4" />
+          Preferred name
+        </h2>
+        <p className="text-sm text-gray-500">This name is only used for greetings. Your wallet address remains your account identity.</p>
+        <div className="flex gap-2">
+          <input
+            value={preferredName}
+            onChange={(event) => {
+              setPreferredName(event.target.value);
+              setSaved(false);
+            }}
+            maxLength={128}
+            placeholder="Enter your preferred name"
+            className="input flex-1"
+            disabled={!account || saving}
+          />
+          <button onClick={handleSaveName} className="btn-primary text-xs" disabled={!account || saving}>
+            {saving ? 'Saving...' : saved ? 'Saved' : 'Save'}
+          </button>
+        </div>
       </div>
 
       {/* Network info */}

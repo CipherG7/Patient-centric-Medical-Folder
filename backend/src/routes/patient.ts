@@ -16,7 +16,7 @@ import { buildCreateHistoryPTB, buildAddEntryPTB, executeTx, checkExistingHistor
 import { getSharedObjectIds, parseEvents } from '../utils/sui-helpers';
 import { AppError } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
-import { apiKeyAuth, optionalAuth } from '../middleware/auth';
+import { apiKeyAuth, requireUserAddress } from '../middleware/auth';
 import { getDb } from '../db';
 
 const router = Router();
@@ -28,11 +28,11 @@ const upload = multer({
 // ─── Schemas ────────────────────────────────────────────────
 
 const CreateHistorySchema = z.object({
-  patientAddr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address'),
+  patientAddr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address').optional(),
 });
 
 const PatientProfileSchema = z.object({
-  patientAddr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address'),
+  patientAddr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address').optional(),
   displayName: z.string().max(128).optional(),
   email: z.string().email().optional().or(z.literal('')),
 });
@@ -166,7 +166,7 @@ router.post(
   validate({ body: CreateHistorySchema }),
   async (req, res, next) => {
     try {
-      const { patientAddr } = req.body;
+      const patientAddr = req.user!.address;
       const client = getSuiClient();
       const signer = getAdminKeypair();
       const sharedIds = getSharedObjectIds();
@@ -263,6 +263,7 @@ router.post(
     try {
       if (!req.file) throw new AppError('History file is required', 400);
       const { addr } = req.params;
+      requireUserAddress(addr, req);
       const records = parseImportFile(req.file);
       const typedRecords = records.map((record) => ({
         record,
@@ -338,7 +339,7 @@ router.post(
  */
 router.get(
   '/:addr/history',
-  optionalAuth,
+  apiKeyAuth,
   validate({ params: AddrParamSchema }),
   async (req, res, next) => {
     try {
@@ -384,7 +385,8 @@ router.post(
   validate({ body: PatientProfileSchema }),
   async (req, res, next) => {
     try {
-      const { patientAddr, displayName, email } = req.body;
+      const { displayName, email } = req.body;
+      const patientAddr = req.user!.address;
       const db = getDb();
 
       await db.query(
@@ -417,11 +419,12 @@ router.post(
  */
 router.get(
   '/:addr/profile',
-  optionalAuth,
+  apiKeyAuth,
   validate({ params: AddrParamSchema }),
   async (req, res, next) => {
     try {
       const { addr } = req.params;
+      requireUserAddress(addr, req);
       const db = getDb();
 
       const { rows } = await db.query(
