@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createNetworkConfig, SuiClientProvider, WalletProvider } from '@mysten/dapp-kit';
 import { getFullnodeUrl } from '@mysten/sui/client';
 import { DashboardLayout } from '@/components/DashboardLayout';
+import { Landing } from '@/pages/Landing';
 import { Welcome } from '@/pages/Welcome';
 import { RoleSelection } from '@/pages/RoleSelection';
 import { PatientDashboard } from '@/pages/PatientDashboard';
@@ -133,8 +134,8 @@ export default function App() {
         <WalletProvider autoConnect>
           <BrowserRouter>
             <Routes>
-              {/* Welcome / Login */}
-              <Route path="/" element={<Welcome />} />
+              {/* Landing / Login */}
+              <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Welcome />} />
               <Route path="/choose-role" element={<RoleSelection />} />
 

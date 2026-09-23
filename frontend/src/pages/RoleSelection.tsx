@@ -4,7 +4,7 @@ import { useCurrentAccount, useSignPersonalMessage } from '@mysten/dapp-kit';
 import { authApi } from '@/lib/api';
 import { roleLabel } from '@/lib/utils';
 import type { UserRole } from '@/types';
-import { Activity, Shield, User, Stethoscope, FlaskConical, Building2, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Shield, User, Stethoscope, FlaskConical, Building2, ChevronRight, ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 
 const roles: { value: UserRole; icon: React.ReactNode; description: string }[] = [
@@ -25,7 +25,7 @@ export function RoleSelection() {
   const walletAccount = useCurrentAccount();
   const signPersonalMessage = useSignPersonalMessage();
 
-  if (!account) return <Navigate to="/" replace />;
+  if (!account) return <Navigate to="/login" replace />;
 
   const handleContinue = async () => {
     if (!walletAccount) {
@@ -61,7 +61,7 @@ export function RoleSelection() {
     sessionStorage.removeItem('selectedRole');
     localStorage.removeItem('auth_session');
     localStorage.removeItem('auth_role');
-    navigate('/', { replace: true, state: { stayOnLogin: true } });
+    navigate('/login', { replace: true });
   };
 
   return (
@@ -69,9 +69,7 @@ export function RoleSelection() {
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-3xl items-center">
         <div className="w-full rounded-[2rem] border border-white/80 bg-white/90 p-6 shadow-[0_24px_80px_rgba(15,35,45,0.12)] sm:p-10">
           <div className="mb-8 flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-teal-600 text-white">
-              <Activity className="h-6 w-6" />
-            </div>
+            <img src="/Medichain.svg" alt="MediChain logo" className="h-11 w-11 object-contain" />
             <div>
               <p className="font-bold tracking-tight text-slate-900">HealthVault</p>
               <p className="text-xs text-teal-600">Signed in successfully</p>

@@ -4,7 +4,7 @@ import { ConnectButton, useDisconnectWallet } from '@mysten/dapp-kit';
 import { useActiveAccount } from '@/lib/auth';
 import { authApi } from '@/lib/api';
 import { usePatientProfile } from '@/hooks/use-patient';
-import { Activity, Shield, Wallet, CheckCircle, LogOut } from 'lucide-react';
+import { Shield, Wallet, CheckCircle, LogOut } from 'lucide-react';
 
 export function Welcome() {
   const [signedInMessage, setSignedInMessage] = useState(false);
@@ -45,9 +45,7 @@ export function Welcome() {
             <div className="absolute -bottom-28 -left-20 h-64 w-64 rounded-full bg-teal-400/10 blur-2xl" />
             <div className="relative">
               <div className="mb-16 flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-teal-400 text-[#102f38]">
-                  <Activity className="h-6 w-6" />
-                </div>
+                <img src="/Medichain.svg" alt="MediChain logo" className="h-11 w-11 object-contain" />
                 <div>
                   <p className="font-bold tracking-tight">MediChain</p>
                   <p className="text-[10px] uppercase tracking-[0.2em] text-teal-200/60">Care, connected</p>

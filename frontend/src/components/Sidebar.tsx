@@ -57,9 +57,7 @@ export function Sidebar({ role, onClose }: SidebarProps) {
     <aside className="flex h-full flex-col bg-[#102f38] text-white border-r border-white/10">
       {/* Logo / Brand */}
       <div className="flex items-center gap-3 px-5 py-6 border-b border-white/10">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-400 text-[#102f38] shadow-lg shadow-teal-950/20">
-          <Activity className="h-4 w-4 text-white" />
-        </div>
+        <img src="/Medichain.svg" alt="MediChain logo" className="h-9 w-9 object-contain" />
         <div className="leading-tight">
           <span className="text-sm font-bold text-white tracking-tight">MediChain</span>
           <p className="text-[10px] text-teal-200/70 uppercase tracking-wider">Care, connected</p>
