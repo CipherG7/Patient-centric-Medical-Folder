@@ -11,6 +11,7 @@ import { AppError } from '../middleware/errorHandler';
 import { DUAL_ROLE_ADDRESS } from '../middleware/auth';
 import { config } from '../config';
 import { getSuiClient } from '../sui/client';
+import { recordOffchainAuditEvent } from '../audit/offchain';
 
 const router = Router();
 const AddressSchema = z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address');
@@ -43,7 +44,11 @@ function getZkLoginSalt(issuer: string, audience: string, subject: string): stri
   return (BigInt(`0x${digest}`) & ((1n << 248n) - 1n)).toString(10);
 }
 
-async function createSession(address: string, role: z.infer<typeof RoleSchema>) {
+async function createSession(
+  address: string,
+  role: z.infer<typeof RoleSchema>,
+  requestId?: string
+) {
   const db = getDb();
   const profile = await db.query('SELECT role FROM user_profiles WHERE user_address = $1', [address]);
   const isDualRoleWallet = address === DUAL_ROLE_ADDRESS;
@@ -65,6 +70,15 @@ async function createSession(address: string, role: z.infer<typeof RoleSchema>) 
     'INSERT INTO sessions (user_address, token, expires_at, role) VALUES ($1, $2, $3, $4)',
     [address, token, expiresAt, role]
   );
+  await recordOffchainAuditEvent({
+    action: 'authentication_succeeded',
+    actorAddr: address,
+    actorRole: role,
+    targetType: 'session',
+    result: 'success',
+    metadata: { method: 'zklogin' },
+    requestId,
+  });
   return { token, address, role, expiresAt: expiresAt.toISOString() };
 }
 
@@ -123,6 +137,7 @@ router.post('/zklogin/challenge', validate({ body: ZkLoginChallengeSchema }), as
 });
 
 router.post('/zklogin/verify', validate({ body: ZkLoginVerifySchema }), async (req, res, next) => {
+  let attemptedAddress: string | null = null;
   try {
     if (!config.GOOGLE_CLIENT_ID || !config.ZKLOGIN_SALT_SECRET) {
       throw new AppError('Google zkLogin is not configured on this server', 503);
@@ -162,9 +177,19 @@ router.post('/zklogin/verify', validate({ body: ZkLoginVerifySchema }), async (r
     const audience = Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
     const salt = getZkLoginSalt(payload.iss, audience, payload.sub);
     const address = jwtToAddress(idToken, salt, false).toLowerCase();
-    const session = await createSession(address, role);
+    attemptedAddress = address;
+    const session = await createSession(address, role, req.requestId);
     res.json(session);
   } catch (err) {
+    await recordOffchainAuditEvent({
+      action: 'authentication_failed',
+      actorAddr: attemptedAddress,
+      actorRole: req.body?.role,
+      targetType: 'session',
+      result: 'failure',
+      metadata: { method: 'zklogin', reasonCode: err instanceof AppError ? err.statusCode : 500 },
+      requestId: req.requestId,
+    }).catch(() => undefined);
     next(err);
   }
 });
@@ -213,8 +238,30 @@ router.post('/verify', validate({ body: VerifySchema }), async (req, res, next) 
       [address, token, expiresAt, role]
     );
 
+    await recordOffchainAuditEvent({
+      action: 'authentication_succeeded',
+      actorAddr: address,
+      actorRole: role,
+      targetType: 'session',
+      result: 'success',
+      metadata: { method: 'wallet_signature' },
+      requestId: req.requestId,
+    });
+
     res.json({ token, address, role, expiresAt: expiresAt.toISOString() });
   } catch (err) {
+    const candidateAddress = req.body?.address;
+    await recordOffchainAuditEvent({
+      action: 'authentication_failed',
+      actorAddr: typeof candidateAddress === 'string' && /^0x[0-9a-fA-F]{40,64}$/.test(candidateAddress)
+        ? candidateAddress
+        : null,
+      actorRole: req.body?.role,
+      targetType: 'session',
+      result: 'failure',
+      metadata: { method: 'wallet_signature', reasonCode: err instanceof AppError ? err.statusCode : 500 },
+      requestId: req.requestId,
+    }).catch(() => undefined);
     next(err);
   }
 });
@@ -222,7 +269,24 @@ router.post('/verify', validate({ body: VerifySchema }), async (req, res, next) 
 router.post('/logout', async (req, res, next) => {
   try {
     const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
-    if (token) await getDb().query('DELETE FROM sessions WHERE token = $1', [token]);
+    if (token) {
+      const db = getDb();
+      const { rows } = await db.query(
+        'SELECT user_address, role FROM sessions WHERE token = $1',
+        [token]
+      );
+      if (rows[0]) {
+        await recordOffchainAuditEvent({
+          action: 'session_ended',
+          actorAddr: rows[0].user_address,
+          actorRole: rows[0].role,
+          targetType: 'session',
+          result: 'success',
+          requestId: req.requestId,
+        });
+      }
+      await db.query('DELETE FROM sessions WHERE token = $1', [token]);
+    }
     res.status(204).send();
   } catch (err) {
     next(err);

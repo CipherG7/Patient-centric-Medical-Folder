@@ -15,6 +15,7 @@ export const DUAL_ROLE_ADDRESS = '0xe148af1066ce54c8cb9e4e6c3b4d57596d677c9060ab
 declare global {
   namespace Express {
     interface Request {
+      requestId?: string;
       user?: {
         address: string;
         role: UserRole;

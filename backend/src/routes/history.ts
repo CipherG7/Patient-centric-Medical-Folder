@@ -29,6 +29,7 @@ import { AppError } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
 import { apiKeyAuth, requireRole } from '../middleware/auth';
 import { getDb } from '../db';
+import { recordOffchainAuditEvent } from '../audit/offchain';
 
 const router = Router();
 
@@ -229,9 +230,14 @@ router.get(
         [historyId]
       );
       const { rows: importedRows } = await db.query(
-        'SELECT entry_id, source_name, record FROM history_import_entries WHERE history_id = $1',
+        'SELECT entry_id, source_name, record FROM history_import_entries WHERE history_id = $1 AND deleted_at IS NULL',
         [historyId]
       );
+      const { rows: deletedRows } = await db.query(
+        'SELECT entry_id FROM history_import_entries WHERE history_id = $1 AND deleted_at IS NOT NULL',
+        [historyId]
+      );
+      const deletedEntryIds = new Set(deletedRows.map((row) => Number(row.entry_id)));
       const importedById = new Map(
         importedRows.map((row) => [Number(row.entry_id), {
           sourceName: row.source_name,
@@ -242,7 +248,7 @@ router.get(
 
       // Sui GraphQL does not expose Table rows for this object. The import
       // table is the persisted display projection for patient-uploaded data.
-      const visibleEntries = parsedEntries.length > 0
+      const visibleEntries = (parsedEntries.length > 0
         ? parsedEntries
         : importedRows.map((row) => ({
           id: Number(row.entry_id),
@@ -252,7 +258,7 @@ router.get(
           contentHash: crypto.createHash('sha256').update(JSON.stringify(row.record)).digest('hex'),
           timestampMs: row.created_at,
           revoked: false,
-        }));
+        }))).filter((entry: any) => !deletedEntryIds.has(Number(entry.id)));
 
       res.json({
         success: true,
@@ -292,10 +298,19 @@ router.get(
       }
 
       const fields = (historyObj.data as any).content?.fields;
-      const entries = fields?.entries?.fields?.contents || [];
+      const entriesField = fields?.entries;
+      const tableId = typeof entriesField?.id === 'string'
+        ? entriesField.id
+        : entriesField?.fields?.id?.id;
+      const inlineEntries = entriesField?.contents ?? entriesField?.fields?.contents;
+      const entries = Array.isArray(inlineEntries) && inlineEntries.length > 0
+        ? inlineEntries
+        : tableId
+          ? await getSuiDynamicFields(tableId)
+          : [];
 
-      const matchedEntry = entries.find(
-        (entry: any) => entry.fields?.key === entryId
+      const matchedEntry = entries.find((entry: any) =>
+        Number(entry.fields?.key ?? entry.name?.value) === Number(entryId)
       );
 
       if (!matchedEntry) {
@@ -303,6 +318,18 @@ router.get(
       }
 
       const e = matchedEntry.fields?.value?.fields || matchedEntry.fields?.value;
+
+      await recordOffchainAuditEvent({
+        action: 'entry_read',
+        actorAddr: req.user!.address,
+        actorRole: req.user!.role,
+        historyId,
+        entryId: Number(entryId),
+        targetType: 'history_entry',
+        targetId: entryId,
+        result: 'success',
+        requestId: req.requestId,
+      });
 
       res.json({
         success: true,

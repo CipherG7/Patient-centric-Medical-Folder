@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useActiveAccount } from '@/lib/auth';
+import { auditApi } from '@/lib/api';
 import { useInstitutions, useRegisterInstitution, useRevokeInstitution, useReinstateInstitution, useLinkInstitutionAdmin } from '@/hooks/use-institutions';
 import { StatusBadge } from '@/components/StatusBadge';
 import { WalletAddress } from '@/components/WalletAddress';
@@ -24,6 +26,11 @@ import {
 export function PlatformAdminDashboard() {
   const account = useActiveAccount();
   const { data: institutionsData, isLoading, error, refetch } = useInstitutions();
+  const securityAudit = useQuery({
+    queryKey: ['audit', 'security'],
+    queryFn: auditApi.getSecurityEvents,
+    refetchInterval: 15_000,
+  });
   const registerMutation = useRegisterInstitution();
   const revokeMutation = useRevokeInstitution();
   const reinstateMutation = useReinstateInstitution();
@@ -330,6 +337,79 @@ export function PlatformAdminDashboard() {
           )}
         </div>
       )}
+
+      <section>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-slate-700">
+            Security Activity
+            <span className="ml-2 font-normal text-gray-400">({securityAudit.data?.count ?? 0})</span>
+          </h2>
+          <button
+            type="button"
+            onClick={() => void securityAudit.refetch()}
+            disabled={securityAudit.isFetching}
+            className="btn-outline text-xs"
+            title="Refresh security events"
+            aria-label="Refresh security events"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${securityAudit.isFetching ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+        {securityAudit.error && (
+          <div className="card border-red-200 bg-red-50 text-xs text-red-700">
+            {securityAudit.error instanceof Error ? securityAudit.error.message : 'Unable to load security events'}
+          </div>
+        )}
+        {securityAudit.isLoading ? <CardSkeleton /> : securityAudit.data?.events.length ? (
+          <div className="card overflow-hidden p-0">
+            <div className="max-h-[28rem] overflow-auto">
+              <table className="w-full min-w-[680px] text-left text-xs">
+                <thead className="sticky top-0 bg-gray-50 text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Action</th>
+                    <th className="px-3 py-2 font-medium">Actor</th>
+                    <th className="px-3 py-2 font-medium">Target</th>
+                    <th className="px-3 py-2 font-medium">Result</th>
+                    <th className="px-3 py-2 font-medium">Time</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {securityAudit.data.events.map((event) => (
+                    <tr key={event.id} className="align-top hover:bg-gray-50/60">
+                      <td className="max-w-64 px-3 py-2 text-slate-700">
+                        <span className="font-medium">{event.action.replace(/_/g, ' ')}</span>
+                        {Object.keys(event.metadata).length > 0 && (
+                          <p className="mt-1 break-words text-[10px] text-gray-400">
+                            {Object.entries(event.metadata).map(([key, value]) => `${key}: ${String(value)}`).join(' · ')}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-gray-600">
+                        {event.actor ? <WalletAddress address={event.actor} /> : 'Unidentified'}
+                        {event.actorRole && <span className="ml-1 text-gray-400">({event.actorRole})</span>}
+                      </td>
+                      <td className="px-3 py-2 text-gray-600">
+                        {event.targetType || '—'}{event.targetId ? `: ${event.targetId}` : ''}
+                        {event.entryId !== null && <span className="ml-1 text-gray-400">#{event.entryId}</span>}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={event.result === 'failure' ? 'text-red-700' : 'text-teal-700'}>
+                          {event.result}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-gray-400">
+                        {formatTimestamp(event.timestampMs)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div className="card py-5 text-center text-xs text-gray-500">No security events recorded yet.</div>
+        )}
+      </section>
     </div>
   );
 }

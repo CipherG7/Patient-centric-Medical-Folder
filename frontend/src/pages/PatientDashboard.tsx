@@ -22,6 +22,7 @@ import {
   Loader2,
   User,
   Clock,
+  Trash2,
 } from 'lucide-react';
 
 type Tab = 'timeline' | 'consent' | 'audit';
@@ -95,11 +96,10 @@ export function PatientDashboard() {
   };
 
   const handleVerifyEntry = async (entry: HistoryEntry): Promise<boolean> => {
-    // In production, this would fetch the document and recompute SHA-256
-    // then compare with entry.contentHash
-    // For now, simulate verification
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    return !!entry.contentHash && entry.contentHash.length > 0;
+    if (!historyId || entry.id === undefined || !entry.offChainRef || !entry.contentHash) {
+      throw new Error('Document details are unavailable for verification');
+    }
+    return documentApi.verify(entry.offChainRef, historyId, entry.id, entry.contentHash);
   };
 
   const handleImport = async (file: File) => {
@@ -131,6 +131,20 @@ export function PatientDashboard() {
       throw new Error('Document details are unavailable');
     }
     return documentApi.download(entry.offChainRef, historyId, entry.id, entry.contentHash || undefined);
+  };
+
+  const handleDeleteDocument = async (entry: HistoryEntry): Promise<void> => {
+    if (!historyId || entry.id === undefined || !entry.import?.record) {
+      throw new Error('Document details are unavailable');
+    }
+    const filename = String(entry.import.record.fileName || 'this PDF');
+    const confirmed = window.confirm(
+      `Remove ${filename}? Its decryption keys will be deleted and it will disappear from your history. The Sui history entry remains, and encrypted Walrus data may persist until its storage expiry. This removal will be recorded in the off-chain audit log.`
+    );
+    if (!confirmed) return;
+
+    await patientImportApi.deletePdf(patientAddr, historyId, entry.id);
+    await refetchHistory();
   };
 
   const pdfCategorySelector = (
@@ -334,6 +348,7 @@ export function PatientDashboard() {
                       index={idx}
                       onVerify={handleVerifyEntry}
                       onViewDocument={handleViewDocument}
+                      onDeleteDocument={entry.import?.record.documentType === 'pdf' ? handleDeleteDocument : undefined}
                     />
                   ))}
                 </div>
@@ -394,7 +409,9 @@ export function PatientDashboard() {
                             <span className="font-medium">{event.actionLabel}</span>
                           </p>
                           <p className="text-xs text-gray-500 mt-0.5">
-                            Actor: <WalletAddress address={event.actor} />
+                            Actor: {event.actor
+                              ? <WalletAddress address={event.actor} />
+                              : 'Unidentified actor'}
                             {event.entryId !== null && ` · Entry #${event.entryId}`}
                           </p>
                         </div>

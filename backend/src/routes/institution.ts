@@ -22,6 +22,7 @@ import { AppError } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
 import { apiKeyAuth, requireRole } from '../middleware/auth';
 import { getDb } from '../db';
+import { recordOffchainAuditEvent } from '../audit/offchain';
 
 const router = Router();
 
@@ -111,6 +112,29 @@ router.post(
         );
       }
 
+      await recordOffchainAuditEvent({
+        action: 'institution_registered',
+        actorAddr: req.user!.address,
+        actorRole: req.user!.role,
+        targetType: 'institution',
+        targetId: institutionAddr.toLowerCase(),
+        result: 'success',
+        metadata: { hospitalAdminLinked: Boolean(hospitalAdminAddr) },
+        requestId: req.requestId,
+      });
+      if (hospitalAdminAddr) {
+        await recordOffchainAuditEvent({
+          action: 'institution_admin_linked',
+          actorAddr: req.user!.address,
+          actorRole: req.user!.role,
+          targetType: 'user',
+          targetId: hospitalAdminAddr.toLowerCase(),
+          result: 'success',
+          metadata: { institutionAddr: institutionAddr.toLowerCase() },
+          requestId: req.requestId,
+        });
+      }
+
       res.status(201).json({
         success: true,
         digest: result.digest,
@@ -150,6 +174,17 @@ router.post(
         [hospitalAdminAddr.toLowerCase(), institutionAddr.toLowerCase()]
       );
 
+      await recordOffchainAuditEvent({
+        action: 'institution_admin_linked',
+        actorAddr: req.user!.address,
+        actorRole: req.user!.role,
+        targetType: 'user',
+        targetId: hospitalAdminAddr.toLowerCase(),
+        result: 'success',
+        metadata: { institutionAddr: institutionAddr.toLowerCase() },
+        requestId: req.requestId,
+      });
+
       res.json({ success: true, institutionAddr, hospitalAdminAddr });
     } catch (err) {
       next(err);
@@ -179,6 +214,16 @@ router.post(
 
       const tx = await buildRevokeInstitutionPTB(sharedIds, adminCapId, institutionAddr);
       const result = await executeTx(client, tx, signer);
+
+      await recordOffchainAuditEvent({
+        action: 'institution_revoked',
+        actorAddr: req.user!.address,
+        actorRole: req.user!.role,
+        targetType: 'institution',
+        targetId: institutionAddr.toLowerCase(),
+        result: 'success',
+        requestId: req.requestId,
+      });
 
       res.json({
         success: true,
@@ -213,6 +258,16 @@ router.post(
 
       const tx = await buildReinstateInstitutionPTB(sharedIds, adminCapId, institutionAddr);
       const result = await executeTx(client, tx, signer);
+
+      await recordOffchainAuditEvent({
+        action: 'institution_reinstated',
+        actorAddr: req.user!.address,
+        actorRole: req.user!.role,
+        targetType: 'institution',
+        targetId: institutionAddr.toLowerCase(),
+        result: 'success',
+        requestId: req.requestId,
+      });
 
       res.json({
         success: true,

@@ -19,6 +19,7 @@ import { AppError } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
 import { apiKeyAuth, requireUserAddress } from '../middleware/auth';
 import { getDb } from '../db';
+import { recordOffchainAuditEvent } from '../audit/offchain';
 
 const router = Router();
 const upload = multer({
@@ -40,6 +41,11 @@ const PatientProfileSchema = z.object({
 
 const AddrParamSchema = z.object({
   addr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address'),
+});
+const DeleteImportedDocumentParamsSchema = z.object({
+  addr: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address'),
+  historyId: z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid history ID'),
+  entryId: z.string().regex(/^\d+$/, 'Invalid entry ID'),
 });
 
 function unwrapEventJson(value: any): any {
@@ -338,6 +344,18 @@ router.post(
         const entryId = Number(event.entry_id);
         if (preparedDocument) {
           await storeDocumentKey(historyId, entryId, addr, preparedDocument.entryKey);
+          await recordOffchainAuditEvent({
+            action: 'document_uploaded',
+            actorAddr: req.user!.address,
+            actorRole: req.user!.role,
+            historyId,
+            entryId,
+            targetType: 'document',
+            targetId: String(entryId),
+            result: 'success',
+            metadata: { encryptedSize: preparedDocument.encryptedSize },
+            requestId: req.requestId,
+          });
         }
         await db.query(
           `INSERT INTO history_import_entries (history_id, entry_id, source_name, record)
@@ -355,6 +373,76 @@ router.post(
       });
     } catch (err) {
       next(err);
+    }
+  }
+);
+
+router.delete(
+  '/:addr/history/:historyId/entries/:entryId',
+  apiKeyAuth,
+  validate({ params: DeleteImportedDocumentParamsSchema }),
+  async (req, res, next) => {
+    const { addr, historyId, entryId: entryIdParam } = req.params;
+    const entryId = Number(entryIdParam);
+    const db = getDb();
+    const client = await db.connect();
+
+    try {
+      requireUserAddress(addr, req);
+      await client.query('BEGIN');
+
+      const ownership = await client.query(
+        `SELECT 1 FROM history_metadata
+         WHERE history_id = $1 AND lower(patient_addr) = lower($2)
+         FOR UPDATE`,
+        [historyId, req.user!.address]
+      );
+      if (ownership.rows.length === 0) {
+        throw new AppError('Medical history not found for this patient', 404);
+      }
+
+      const imported = await client.query(
+        `SELECT record, deleted_at FROM history_import_entries
+         WHERE history_id = $1 AND entry_id = $2
+         FOR UPDATE`,
+        [historyId, entryId]
+      );
+      if (imported.rows.length === 0 || imported.rows[0].deleted_at) {
+        throw new AppError('Imported document not found', 404);
+      }
+      if (imported.rows[0].record?.documentType !== 'pdf') {
+        throw new AppError('Only imported PDF documents can be removed here', 400);
+      }
+
+      await client.query(
+        `UPDATE history_import_entries SET deleted_at = now()
+         WHERE history_id = $1 AND entry_id = $2`,
+        [historyId, entryId]
+      );
+      await client.query(
+        'DELETE FROM entry_keys WHERE history_id = $1 AND entry_id = $2',
+        [historyId, entryId]
+      );
+      await recordOffchainAuditEvent({
+        action: 'document_deleted',
+        actorAddr: req.user!.address,
+        actorRole: req.user!.role,
+        historyId,
+        entryId,
+        targetType: 'document',
+        targetId: String(entryId),
+        result: 'success',
+        metadata: { decryptionKeyDeleted: true },
+        requestId: req.requestId,
+      }, client);
+      await client.query('COMMIT');
+
+      res.json({ success: true, historyId, entryId });
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      next(err);
+    } finally {
+      client.release();
     }
   }
 );

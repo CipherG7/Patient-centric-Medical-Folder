@@ -212,18 +212,46 @@ export interface AuditResponse {
   historyId: string;
   count: number;
   events: Array<{
-    id: number;
-    actor: string;
-    action: number;
+    id: string;
+    source: 'on-chain' | 'off-chain';
+    actor: string | null;
+    actorRole: string | null;
+    action: number | null;
     actionLabel: string;
     entryId: number | null;
     timestampMs: string;
+    result: 'success' | 'failure';
+    targetType: string | null;
+    targetId: string | null;
+    accessScope: string | null;
+    metadata: Record<string, string | number | boolean | null>;
+    requestId: string | null;
   }>;
 }
 
 export const auditApi = {
   getAuditLog: (historyId: string) =>
     request<AuditResponse>('GET', `/history/${historyId}/audit`),
+  getSecurityEvents: () =>
+    request<{
+      success: boolean;
+      count: number;
+      events: Array<{
+        id: string;
+        historyId: string | null;
+        actor: string | null;
+        actorRole: string | null;
+        action: string;
+        entryId: number | null;
+        targetType: string | null;
+        targetId: string | null;
+        accessScope: string | null;
+        result: 'success' | 'failure';
+        metadata: Record<string, string | number | boolean | null>;
+        requestId: string | null;
+        timestampMs: string;
+      }>;
+    }>('GET', '/audit/events'),
 };
 
 // ─── Institution endpoints ────────────────────────────────
@@ -338,6 +366,20 @@ export const documentApi = {
     }
     return response.blob();
   },
+
+  verify: async (cid: string, historyId: string, entryId: number, contentHash: string): Promise<boolean> => {
+    const token = getSessionToken();
+    const response = await fetch(
+      `${documentApi.getDownloadUrl(cid, historyId, entryId, contentHash)}&verifyOnly=true`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+    );
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(errorData.error || `Verification failed: ${response.status}`);
+    }
+    const result = await response.json() as { verified: boolean };
+    return result.verified;
+  },
 };
 
 export interface ImportHistoryResponse {
@@ -347,6 +389,11 @@ export interface ImportHistoryResponse {
 }
 
 export const patientImportApi = {
+  deletePdf: (patientAddr: string, historyId: string, entryId: number) =>
+    request<{ success: boolean; historyId: string; entryId: number }>(
+      'DELETE',
+      `/patients/${patientAddr}/history/${historyId}/entries/${entryId}`
+    ),
   upload: async (file: File, patientAddr: string, historyId?: string, entryType?: number): Promise<ImportHistoryResponse> => {
     const formData = new FormData();
     formData.append('history', file);

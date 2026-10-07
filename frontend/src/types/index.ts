@@ -47,6 +47,7 @@ export enum AuditAction {
   PartialRead = 3,
   AccessGranted = 4,
   AccessRevoked = 5,
+  DocumentDeleted = 6,
 }
 
 export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
@@ -56,6 +57,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   [AuditAction.PartialRead]: 'Entry Read',
   [AuditAction.AccessGranted]: 'Access Granted',
   [AuditAction.AccessRevoked]: 'Access Revoked',
+  [AuditAction.DocumentDeleted]: 'Document Removed',
 };
 
 export const AUDIT_ACTION_ICONS: Record<AuditAction, string> = {
@@ -65,6 +67,7 @@ export const AUDIT_ACTION_ICONS: Record<AuditAction, string> = {
   [AuditAction.PartialRead]: 'eye-off',
   [AuditAction.AccessGranted]: 'unlock',
   [AuditAction.AccessRevoked]: 'lock',
+  [AuditAction.DocumentDeleted]: 'trash-2',
 };
 
 // ─── User roles ────────────────────────────────────────────
@@ -107,12 +110,20 @@ export interface Grant {
 }
 
 export interface AuditEvent {
-  id: number;
-  actor: string;
-  action: number;
+  id: string;
+  source: 'on-chain' | 'off-chain';
+  actor: string | null;
+  actorRole: string | null;
+  action: number | null;
   actionLabel: string;
   entryId: number | null;
   timestampMs: string;
+  result: 'success' | 'failure';
+  targetType: string | null;
+  targetId: string | null;
+  accessScope: string | null;
+  metadata: Record<string, string | number | boolean | null>;
+  requestId: string | null;
 }
 
 export interface Institution {

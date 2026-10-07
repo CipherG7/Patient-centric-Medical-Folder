@@ -21,6 +21,7 @@ import { AppError } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
 import { apiKeyAuth } from '../middleware/auth';
 import { getDb } from '../db';
+import { recordOffchainAuditEvent } from '../audit/offchain';
 
 const router = Router();
 
@@ -85,6 +86,19 @@ router.post(
 
       const result = await executeTx(client, tx, signer);
 
+      await recordOffchainAuditEvent({
+        action: 'access_grant_details',
+        actorAddr: req.user!.address,
+        actorRole: req.user!.role,
+        historyId,
+        targetType: 'wallet',
+        targetId: granteeAddr.toLowerCase(),
+        accessScope: 'full',
+        result: 'success',
+        metadata: { expiresAtMs: expiryMs },
+        requestId: req.requestId,
+      });
+
       res.status(201).json({
         success: true,
         digest: result.digest,
@@ -126,6 +140,19 @@ router.post(
 
       const result = await executeTx(client, tx, signer);
 
+      await recordOffchainAuditEvent({
+        action: 'access_grant_details',
+        actorAddr: req.user!.address,
+        actorRole: req.user!.role,
+        historyId,
+        targetType: 'wallet',
+        targetId: granteeAddr.toLowerCase(),
+        accessScope: 'partial',
+        result: 'success',
+        metadata: { expiresAtMs: expiryMs, entryCount: entryIds.length },
+        requestId: req.requestId,
+      });
+
       res.status(201).json({
         success: true,
         digest: result.digest,
@@ -160,6 +187,18 @@ router.post(
 
       const tx = await buildRevokeAccessPTB(sharedIds, historyId, granteeAddr);
       const result = await executeTx(client, tx, signer);
+
+      await recordOffchainAuditEvent({
+        action: 'access_revocation_details',
+        actorAddr: req.user!.address,
+        actorRole: req.user!.role,
+        historyId,
+        targetType: 'wallet',
+        targetId: granteeAddr.toLowerCase(),
+        accessScope: 'all',
+        result: 'success',
+        requestId: req.requestId,
+      });
 
       res.json({
         success: true,

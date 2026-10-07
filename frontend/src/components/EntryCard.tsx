@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   FileDown,
   Download,
+  Trash2,
   Loader2,
   AlertTriangle,
   type LucideIcon,
@@ -36,14 +37,17 @@ interface EntryCardProps {
   index?: number;
   onVerify?: (entry: HistoryEntry) => Promise<boolean>;
   onViewDocument?: (entry: HistoryEntry) => Promise<Blob>;
+  onDeleteDocument?: (entry: HistoryEntry) => Promise<void>;
   className?: string;
 }
 
-export function EntryCard({ entry, entryId, index, onVerify, onViewDocument, className }: EntryCardProps) {
+export function EntryCard({ entry, entryId, index, onVerify, onViewDocument, onDeleteDocument, className }: EntryCardProps) {
   const [verifying, setVerifying] = useState(false);
   const [verified, setVerified] = useState<boolean | null>(null);
   const [openingDocument, setOpeningDocument] = useState(false);
   const [documentError, setDocumentError] = useState<string | null>(null);
+  const [deletingDocument, setDeletingDocument] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -85,6 +89,19 @@ export function EntryCard({ entry, entryId, index, onVerify, onViewDocument, cla
       setDocumentError(error instanceof Error ? error.message : 'Unable to open document');
     } finally {
       setOpeningDocument(false);
+    }
+  };
+
+  const handleDeleteDocument = async () => {
+    if (!onDeleteDocument) return;
+    setDeletingDocument(true);
+    setDeleteError(null);
+    try {
+      await onDeleteDocument(entry);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Unable to remove document');
+    } finally {
+      setDeletingDocument(false);
     }
   };
 
@@ -204,7 +221,7 @@ export function EntryCard({ entry, entryId, index, onVerify, onViewDocument, cla
               ))}
           </dl>
           {entry.import.record.documentType === 'pdf' && onViewDocument && (
-            <div className="mt-3">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => void handleViewDocument()}
@@ -214,7 +231,22 @@ export function EntryCard({ entry, entryId, index, onVerify, onViewDocument, cla
                 {openingDocument ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanEye className="h-3.5 w-3.5" />}
                 {openingDocument ? 'Opening…' : 'View PDF'}
               </button>
+              {onDeleteDocument && (
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteDocument()}
+                  disabled={deletingDocument}
+                  className="btn-ghost p-2 text-red-700 hover:bg-red-50"
+                  title="Remove PDF"
+                  aria-label="Remove PDF"
+                >
+                  {deletingDocument
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <Trash2 className="h-4 w-4" />}
+                </button>
+              )}
               {documentError && <p className="mt-2 text-xs text-red-600">{documentError}</p>}
+              {deleteError && <p className="mt-2 text-xs text-red-600">{deleteError}</p>}
             </div>
           )}
         </div>

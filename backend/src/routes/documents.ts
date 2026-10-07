@@ -24,6 +24,7 @@ import { getDb } from '../db';
 import { AppError } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
 import { apiKeyAuth } from '../middleware/auth';
+import { recordOffchainAuditEvent } from '../audit/offchain';
 
 const router = Router();
 
@@ -94,6 +95,18 @@ router.post(
         entryId,
         ownerAddr
       );
+      await recordOffchainAuditEvent({
+        action: 'document_uploaded',
+        actorAddr: ownerAddr,
+        actorRole: req.user!.role,
+        historyId,
+        entryId,
+        targetType: 'document',
+        targetId: String(entryId),
+        result: 'success',
+        metadata: { encryptedSize: result.encryptedSize },
+        requestId: req.requestId,
+      });
 
       res.status(201).json({
         success: true,
@@ -105,6 +118,19 @@ router.post(
         historyId,
       });
     } catch (err) {
+      if (req.user && typeof req.body?.historyId === 'string') {
+        await recordOffchainAuditEvent({
+          action: 'document_upload_failed',
+          actorAddr: req.user.address,
+          actorRole: req.user.role,
+          historyId: req.body.historyId,
+          entryId: Number.isInteger(req.body?.entryId) ? req.body.entryId : null,
+          targetType: 'document',
+          result: 'failure',
+          metadata: { reasonCode: err instanceof AppError ? err.statusCode : 500 },
+          requestId: req.requestId,
+        }).catch(() => undefined);
+      }
       next(err);
     }
   }
@@ -131,6 +157,7 @@ router.get(
       const entryId = parseInt(req.query.entryId as string, 10);
       const historyId = req.query.historyId as string;
       const expectedHash = req.query.contentHash as string | undefined;
+      const verifyOnly = req.query.verifyOnly === 'true';
 
       if (!req.user) {
         throw new AppError('Authentication required to download documents', 401);
@@ -140,6 +167,9 @@ router.get(
       }
       if (!historyId) {
         throw new AppError('Query parameter "historyId" is required', 400);
+      }
+      if (verifyOnly && !expectedHash) {
+        throw new AppError('A content hash is required for integrity verification', 400);
       }
 
       const userAddr = req.user.address;
@@ -173,12 +203,53 @@ router.get(
       if (expectedHash) {
         const isValid = verifyContentHash(encryptedPayload, expectedHash);
         if (!isValid) {
+          await recordOffchainAuditEvent({
+            action: 'document_integrity_check_failed',
+            actorAddr: userAddr,
+            actorRole: req.user.role,
+            historyId,
+            entryId,
+            targetType: 'document',
+            targetId: String(entryId),
+            result: 'failure',
+            metadata: { reason: 'content_hash_mismatch' },
+            requestId: req.requestId,
+          });
           throw new AppError('Content hash mismatch: data may have been tampered with', 409);
         }
       }
 
+      if (verifyOnly) {
+        await recordOffchainAuditEvent({
+          action: 'document_integrity_verified',
+          actorAddr: userAddr,
+          actorRole: req.user.role,
+          historyId,
+          entryId,
+          targetType: 'document',
+          targetId: String(entryId),
+          result: 'success',
+          requestId: req.requestId,
+        });
+        res.json({ success: true, verified: true });
+        return;
+      }
+
       // 5. Decrypt the document
       const plaintext = decryptDocument(encryptedPayload, entryKey);
+
+      await recordOffchainAuditEvent({
+        action: 'history_read',
+        actorAddr: userAddr,
+        actorRole: req.user.role,
+        historyId,
+        entryId,
+        targetType: 'history_entry',
+        targetId: String(entryId),
+        result: 'success',
+        metadata: { accessMethod: 'view_pdf' },
+        requestId: req.requestId,
+      });
 
       // 6. Return the decrypted document
       // For the prototype, we return it as a download with original filename
@@ -188,6 +259,19 @@ router.get(
       res.setHeader('Content-Length', plaintext.length.toString());
       res.send(plaintext);
     } catch (err) {
+      if (req.user && typeof req.query.historyId === 'string') {
+        await recordOffchainAuditEvent({
+          action: 'document_access_failed',
+          actorAddr: req.user.address,
+          actorRole: req.user.role,
+          historyId: req.query.historyId,
+          entryId: Number.isInteger(Number(req.query.entryId)) ? Number(req.query.entryId) : null,
+          targetType: 'document',
+          result: 'failure',
+          metadata: { reasonCode: err instanceof AppError ? err.statusCode : 500 },
+          requestId: req.requestId,
+        }).catch(() => undefined);
+      }
       next(err);
     }
   }

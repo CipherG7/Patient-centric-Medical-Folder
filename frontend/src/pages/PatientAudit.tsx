@@ -19,6 +19,7 @@ import {
   EyeOff,
   PlusCircle,
   XCircle,
+  Trash2,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -29,6 +30,49 @@ const actionIconMap: Record<string, LucideIcon> = {
   'eye-off': EyeOff,
   'unlock': Shield,
   'lock': ShieldOff,
+  'trash-2': Trash2,
+};
+
+const offchainActionLabels: Record<string, string> = {
+  access_grant_details: 'Access Grant Details',
+  access_revocation_details: 'Access Revocation Details',
+  authentication_failed: 'Authentication Failed',
+  authentication_succeeded: 'Authentication Succeeded',
+  document_access_failed: 'Document Access Failed',
+  document_accessed: 'Document Accessed',
+  document_deleted: 'Document Removed',
+  document_integrity_check_failed: 'Integrity Check Failed',
+  document_integrity_verified: 'Integrity Verified',
+  document_uploaded: 'Document Uploaded',
+  document_upload_failed: 'Document Upload Failed',
+  entry_read: 'Entry Read',
+  history_read: 'History Read',
+  institution_admin_linked: 'Institution Admin Linked',
+  institution_registered: 'Institution Registered',
+  institution_reinstated: 'Institution Reinstated',
+  institution_revoked: 'Institution Revoked',
+  session_ended: 'Session Ended',
+};
+
+const offchainActionIcons: Record<string, string> = {
+  access_grant_details: 'unlock',
+  access_revocation_details: 'lock',
+  authentication_failed: 'x-circle',
+  authentication_succeeded: 'plus-circle',
+  document_access_failed: 'x-circle',
+  document_accessed: 'eye',
+  document_deleted: 'trash-2',
+  document_integrity_check_failed: 'x-circle',
+  document_integrity_verified: 'plus-circle',
+  document_uploaded: 'plus-circle',
+  document_upload_failed: 'x-circle',
+  entry_read: 'eye-off',
+  history_read: 'eye',
+  institution_admin_linked: 'unlock',
+  institution_registered: 'plus-circle',
+  institution_reinstated: 'plus-circle',
+  institution_revoked: 'lock',
+  session_ended: 'lock',
 };
 
 export function PatientAudit() {
@@ -75,7 +119,7 @@ export function PatientAudit() {
             Audit Log
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Immutable, reverse-chronological record of all actions on your medical history
+            Chronological record of actions on your medical history
           </p>
         </div>
         <button onClick={() => refetch()} className="btn-outline text-xs" disabled={auditLoading}>
@@ -121,8 +165,12 @@ export function PatientAudit() {
           <div className="divide-y divide-gray-100">
             {events.map((event) => {
               const action = event.action as AuditAction;
-              const label = AUDIT_ACTION_LABELS[action] || event.actionLabel;
-              const iconKey = AUDIT_ACTION_ICONS[action] || 'file-text';
+              const label = event.source === 'off-chain'
+                ? offchainActionLabels[event.actionLabel] || event.actionLabel
+                : AUDIT_ACTION_LABELS[action] || event.actionLabel;
+              const iconKey = event.source === 'off-chain'
+                ? offchainActionIcons[event.actionLabel] || 'file-text'
+                : AUDIT_ACTION_ICONS[action] || 'file-text';
               const Icon = actionIconMap[iconKey] || Activity;
 
               return (
@@ -159,11 +207,37 @@ export function PatientAudit() {
                           #{event.entryId}
                         </span>
                       )}
+                      {event.source === 'off-chain' && (
+                        <span className="text-[10px] uppercase tracking-wide text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                          Off-chain
+                        </span>
+                      )}
+                      {event.result === 'failure' && (
+                        <span className="text-[10px] uppercase tracking-wide text-red-700 bg-red-50 px-1.5 py-0.5 rounded">
+                          Failed
+                        </span>
+                      )}
+                      {event.accessScope && (
+                        <span className="text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded">
+                          {event.accessScope} access
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1.5">
                       <User className="h-3 w-3" />
-                      <WalletAddress address={event.actor} />
+                      {event.actor
+                        ? <WalletAddress address={event.actor} />
+                        : <span>Unidentified actor</span>}
+                      {event.actorRole && <span>· {event.actorRole.replace(/_/g, ' ')}</span>}
                     </p>
+                    {(event.requestId || Object.keys(event.metadata).length > 0) && (
+                      <p className="mt-1 text-[11px] text-gray-400">
+                        {Object.entries(event.metadata)
+                          .map(([key, value]) => `${key.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)}: ${String(value)}`)
+                          .join(' · ')}
+                        {event.requestId && ` · request ${event.requestId.slice(0, 8)}`}
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0 text-xs text-gray-400">
@@ -179,7 +253,7 @@ export function PatientAudit() {
 
       {/* Footer note */}
       <p className="text-xs text-gray-400 text-center">
-        The audit log is stored on-chain and cannot be edited or deleted — guaranteed by the Sui Move smart contract.
+        On-chain events are immutable. File removal events are recorded off-chain and depend on the application database.
       </p>
     </div>
   );
