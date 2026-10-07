@@ -25,16 +25,42 @@ export function RoleSelection() {
   const walletAccount = useCurrentAccount();
   const signPersonalMessage = useSignPersonalMessage();
 
-  if (!account) return <Navigate to="/login" replace />;
+  const pendingGoogleToken = sessionStorage.getItem('zklogin_pending_jwt');
+  const isGoogleLogin = Boolean(pendingGoogleToken);
+  if (!account && !pendingGoogleToken) return <Navigate to="/login" replace />;
 
   const handleContinue = async () => {
-    if (!walletAccount) {
-      setAuthError('Connect the wallet that belongs to this person before continuing.');
-      return;
-    }
     setAuthenticating(true);
     setAuthError('');
     try {
+      const pendingToken = sessionStorage.getItem('zklogin_pending_jwt');
+      const pendingChallengeId = sessionStorage.getItem('zklogin_pending_challenge_id');
+      if (pendingToken && pendingChallengeId) {
+        const session = await authApi.zkLoginVerify(pendingChallengeId, pendingToken, selectedRole);
+        localStorage.setItem('zklogin_address', session.address);
+        localStorage.setItem('zklogin_issuer', 'https://accounts.google.com');
+        sessionStorage.removeItem('zklogin_pending_jwt');
+        sessionStorage.removeItem('zklogin_pending_challenge_id');
+        sessionStorage.removeItem('zklogin_ephemeral_secret');
+        sessionStorage.removeItem('zklogin_ephemeral_public');
+        sessionStorage.removeItem('zklogin_randomness');
+        sessionStorage.removeItem('zklogin_max_epoch');
+        localStorage.setItem('auth_session', session.token);
+        localStorage.setItem('auth_role', session.role);
+        sessionStorage.setItem('selectedRole', session.role);
+        navigate('/dashboard', { state: { role: session.role } });
+        return;
+      }
+      if (!walletAccount) {
+        const existingRole = localStorage.getItem('auth_role') as UserRole | null;
+        if (localStorage.getItem('auth_session') && existingRole) {
+          sessionStorage.setItem('selectedRole', existingRole);
+          navigate('/dashboard', { state: { role: existingRole } });
+          return;
+        }
+        setAuthError('Continue with Google again to renew this sign-in.');
+        return;
+      }
       const challenge = await authApi.challenge(walletAccount.address);
       const signed = await signPersonalMessage.mutateAsync({
         message: new TextEncoder().encode(challenge.message),
@@ -72,7 +98,9 @@ export function RoleSelection() {
             <img src="/Medichain.svg" alt="MediChain logo" className="h-11 w-11 object-contain" />
             <div>
               <p className="font-bold tracking-tight text-slate-900">HealthVault</p>
-              <p className="text-xs text-teal-600">Signed in successfully</p>
+              <p className="text-xs text-teal-600">
+                {isGoogleLogin ? 'Google sign-in ready to verify' : 'Signed in successfully'}
+              </p>
             </div>
           </div>
           <button onClick={handleBackToLogin} className="btn-ghost mb-5 px-0 text-sm">
@@ -103,7 +131,9 @@ export function RoleSelection() {
           </div>
           {authError && <p className="mt-4 text-center text-xs text-red-600">{authError}</p>}
           <button onClick={handleContinue} disabled={authenticating} className="btn-primary mt-6 w-full">
-            {authenticating ? 'Authenticating wallet…' : 'Continue to dashboard'}
+            {authenticating
+              ? isGoogleLogin ? 'Verifying Google sign-in…' : 'Authenticating wallet…'
+              : isGoogleLogin ? 'Verify and continue' : 'Continue to dashboard'}
           </button>
         </div>
       </div>

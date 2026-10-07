@@ -22,6 +22,7 @@ import {
   getSharedObjectIds,
   getSharedObjectRef,
   parseEvents,
+  contentHashToHex,
   bytesToString,
 } from '../utils/sui-helpers';
 import { AppError } from '../middleware/errorHandler';
@@ -190,9 +191,13 @@ router.get(
       const fields = (historyObj.data as any).content?.fields;
       const owner = fields?.owner;
       const entryCount = fields?.entry_count;
-      const entriesTableId = fields?.entries?.fields?.id?.id;
-      const entries = fields?.entries?.fields?.contents?.length
-        ? fields.entries.fields.contents
+      const entriesField = fields?.entries;
+      const entriesTableId = typeof entriesField?.id === 'string'
+        ? entriesField.id
+        : entriesField?.fields?.id?.id;
+      const inlineEntries = entriesField?.contents ?? entriesField?.fields?.contents;
+      const entries = Array.isArray(inlineEntries) && inlineEntries.length > 0
+        ? inlineEntries
         : entriesTableId
           ? await getSuiDynamicFields(entriesTableId)
           : [];
@@ -210,7 +215,7 @@ router.get(
             ? bytesToString(e.off_chain_ref)
             : null,
           contentHash: e?.content_hash
-            ? Buffer.from(e.content_hash).toString('hex')
+            ? contentHashToHex(e.content_hash)
             : null,
           timestampMs: e?.timestamp_ms,
           revoked: e?.revoked,
@@ -310,7 +315,7 @@ router.get(
             ? bytesToString(e.off_chain_ref)
             : null,
           contentHash: e?.content_hash
-            ? Buffer.from(e.content_hash).toString('hex')
+            ? contentHashToHex(e.content_hash)
             : null,
           timestampMs: e?.timestamp_ms,
           revoked: e?.revoked,

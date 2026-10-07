@@ -133,9 +133,16 @@ export function hexToBytes(hex: string): Uint8Array {
  * Convert bytes to a hex string.
  */
 export function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+  return Buffer.from(bytes).toString('hex');
+}
+
+/** Convert a Sui JSON vector or gRPC base64 vector to a SHA-256 hex digest. */
+export function contentHashToHex(bytes: number[] | string): string {
+  const rawBytes = typeof bytes === 'string' ? Buffer.from(bytes, 'base64') : Buffer.from(bytes);
+  const legacyHash = rawBytes.toString('utf8');
+  return /^[0-9a-f]{64}$/i.test(legacyHash)
+    ? legacyHash.toLowerCase()
+    : rawBytes.toString('hex');
 }
 
 /**
@@ -149,6 +156,9 @@ export function stringToBytes(str: string): Uint8Array {
 /**
  * Convert a Move `vector<u8>` field (returned as number[]) to a UTF-8 string.
  */
-export function bytesToString(bytes: number[]): string {
+export function bytesToString(bytes: number[] | string): string {
+  if (typeof bytes === 'string') {
+    return new TextDecoder().decode(Buffer.from(bytes, 'base64'));
+  }
   return new TextDecoder().decode(new Uint8Array(bytes));
 }

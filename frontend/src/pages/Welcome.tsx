@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ConnectButton, useDisconnectWallet } from '@mysten/dapp-kit';
-import { useActiveAccount } from '@/lib/auth';
+import { ConnectButton, useCurrentAccount, useDisconnectWallet } from '@mysten/dapp-kit';
+import { clearZkLoginSession, useActiveAccount } from '@/lib/auth';
 import { authApi } from '@/lib/api';
 import { usePatientProfile } from '@/hooks/use-patient';
 import { Shield, Wallet, CheckCircle, LogOut } from 'lucide-react';
+import { GoogleZkLoginButton } from '@/components/GoogleZkLoginButton';
 
 export function Welcome() {
   const [signedInMessage, setSignedInMessage] = useState(false);
   const navigate = useNavigate();
   const account = useActiveAccount();
+  const walletAccount = useCurrentAccount();
+  const [googleError, setGoogleError] = useState('');
   const { data: profile } = usePatientProfile(account?.address);
   const { mutate: disconnectWallet } = useDisconnectWallet();
   const preferredName = profile?.data.display_name?.trim();
@@ -20,10 +23,7 @@ export function Welcome() {
 
   const handleSignOut = () => {
     void authApi.logout().catch(() => undefined);
-    localStorage.removeItem('zklogin_jwt');
-    localStorage.removeItem('zklogin_address');
-    localStorage.removeItem('zklogin_issuer');
-    localStorage.removeItem('zklogin_subject');
+    clearZkLoginSession();
     sessionStorage.removeItem('zklogin_signed_in');
     sessionStorage.removeItem('selectedRole');
     localStorage.removeItem('auth_session');
@@ -81,6 +81,13 @@ export function Welcome() {
                 <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-teal-600"><span className="h-1.5 w-1.5 rounded-full bg-teal-500" /> Secure</span>
               </div>
               <ConnectButton className="!btn-primary !w-full !justify-center" />
+              {!walletAccount && (
+                <div className="mt-4 border-t border-slate-200 pt-4">
+                  <p className="mb-3 text-center text-xs text-slate-500">Or continue without a wallet</p>
+                  <GoogleZkLoginButton onError={setGoogleError} />
+                  {googleError && <p className="mt-2 text-center text-xs text-red-600">{googleError}</p>}
+                </div>
+              )}
               {account && (
                 <div className="mt-3 rounded-xl border border-teal-200 bg-teal-50 p-3">
                   <div className="flex items-center gap-2 text-sm font-semibold text-teal-800">

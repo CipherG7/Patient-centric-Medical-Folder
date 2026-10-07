@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { formatTimestamp, shortenAddress, cn } from '@/lib/utils';
 import { ENTRY_TYPE_LABELS, ENTRY_TYPE_ICONS, type HistoryEntry, EntryType } from '@/types';
 import { StatusBadge } from './StatusBadge';
@@ -11,8 +11,10 @@ import {
   ArrowRightCircle,
   FileText,
   ScanEye,
+  X,
   ShieldCheck,
   FileDown,
+  Download,
   Loader2,
   AlertTriangle,
   type LucideIcon,
@@ -33,12 +35,22 @@ interface EntryCardProps {
   entryId?: number;
   index?: number;
   onVerify?: (entry: HistoryEntry) => Promise<boolean>;
+  onViewDocument?: (entry: HistoryEntry) => Promise<Blob>;
   className?: string;
 }
 
-export function EntryCard({ entry, entryId, index, onVerify, className }: EntryCardProps) {
+export function EntryCard({ entry, entryId, index, onVerify, onViewDocument, className }: EntryCardProps) {
   const [verifying, setVerifying] = useState(false);
   const [verified, setVerified] = useState<boolean | null>(null);
+  const [openingDocument, setOpeningDocument] = useState(false);
+  const [documentError, setDocumentError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
   const entryType = entry.entryType as EntryType;
   const label = ENTRY_TYPE_LABELS[entryType] || `Type ${entry.entryType}`;
@@ -61,7 +73,23 @@ export function EntryCard({ entry, entryId, index, onVerify, className }: EntryC
     }
   };
 
+  const handleViewDocument = async () => {
+    if (!onViewDocument) return;
+    setOpeningDocument(true);
+    setDocumentError(null);
+    try {
+      const documentBlob = await onViewDocument(entry);
+      const pdfBlob = new Blob([documentBlob], { type: 'application/pdf' });
+      setPreviewUrl(URL.createObjectURL(pdfBlob));
+    } catch (error) {
+      setDocumentError(error instanceof Error ? error.message : 'Unable to open document');
+    } finally {
+      setOpeningDocument(false);
+    }
+  };
+
   return (
+    <>
     <div
       className={cn(
         'card relative transition-all duration-150',
@@ -157,7 +185,7 @@ export function EntryCard({ entry, entryId, index, onVerify, className }: EntryC
         <div className="mt-4 rounded-lg border border-teal-100 bg-teal-50/40 px-4 py-3">
           <div className="flex items-center justify-between gap-3 mb-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-teal-800">
-              Imported record
+              {entry.import.record.documentType === 'pdf' ? 'PDF document' : 'Imported record'}
             </p>
             <p className="text-[11px] text-teal-700 truncate">{entry.import.sourceName}</p>
           </div>
@@ -175,6 +203,20 @@ export function EntryCard({ entry, entryId, index, onVerify, className }: EntryC
                 </div>
               ))}
           </dl>
+          {entry.import.record.documentType === 'pdf' && onViewDocument && (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => void handleViewDocument()}
+                disabled={openingDocument}
+                className="btn-outline text-xs"
+              >
+                {openingDocument ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanEye className="h-3.5 w-3.5" />}
+                {openingDocument ? 'Opening…' : 'View PDF'}
+              </button>
+              {documentError && <p className="mt-2 text-xs text-red-600">{documentError}</p>}
+            </div>
+          )}
         </div>
       )}
 
@@ -185,6 +227,39 @@ export function EntryCard({ entry, entryId, index, onVerify, className }: EntryC
         </div>
       )}
     </div>
+    {previewUrl && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 sm:p-6" role="dialog" aria-modal="true" aria-label="PDF preview">
+        <div className="flex h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-xl">
+          <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
+            <h2 className="truncate text-sm font-semibold text-slate-800">
+              {String(entry.import?.record.fileName || 'Medical document.pdf')}
+            </h2>
+            <div className="flex shrink-0 items-center gap-2">
+              <a
+                href={previewUrl}
+                download={String(entry.import?.record.fileName || 'medical-document.pdf')}
+                className="btn-ghost p-2"
+                title="Download PDF"
+                aria-label="Download PDF"
+              >
+                <Download className="h-4 w-4" />
+              </a>
+              <button
+                type="button"
+                onClick={() => setPreviewUrl(null)}
+                className="btn-ghost p-2"
+                title="Close PDF preview"
+                aria-label="Close PDF preview"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+          <iframe title="PDF document preview" src={previewUrl} className="min-h-0 flex-1 bg-gray-100" />
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

@@ -27,6 +27,10 @@ export interface ProcessedDocument {
   encryptedSize: number;
 }
 
+export interface PreparedDocument extends ProcessedDocument {
+  entryKey: Buffer;
+}
+
 // ─── Service ───────────────────────────────────────────────
 
 /**
@@ -42,12 +46,7 @@ export interface ProcessedDocument {
  * @param ownerAddr - The patient's Sui address (history owner).
  * @returns The Walrus blob ID and content hash ready for on-chain storage.
  */
-export async function processDocument(
-  documentBytes: Buffer,
-  historyId: string,
-  entryId: number,
-  ownerAddr: string
-): Promise<ProcessedDocument> {
+export async function prepareDocument(documentBytes: Buffer): Promise<PreparedDocument> {
   // 1. Generate a fresh per-entry AES-256 key
   const entryKey = crypto.randomBytes(32);
 
@@ -64,7 +63,22 @@ export async function processDocument(
   // 4. Upload encrypted blob to Walrus
   const { blobId, size } = await uploadToWalrus(encryptedBlob);
 
-  // 5. Wrap the entry key for the owner and store in PostgreSQL
+  return {
+    offChainRef: blobId,
+    contentHash,
+    encryptedSize: size,
+    entryKey,
+  };
+}
+
+export async function storeDocumentKey(
+  historyId: string,
+  entryId: number,
+  ownerAddr: string,
+  entryKey: Buffer
+): Promise<void> {
+  if (entryKey.length !== 32) throw new Error('Invalid document encryption key');
+
   const ownerWrappingKey = deriveWrappingKey(ownerAddr);
   const wrapped = encryptWithAES(entryKey, ownerWrappingKey);
 
@@ -75,15 +89,25 @@ export async function processDocument(
      ON CONFLICT (history_id, entry_id, grantee_addr) DO NOTHING`,
     [historyId, entryId, ownerAddr, wrapped.iv, wrapped.ciphertext, wrapped.tag]
   );
+}
+
+export async function processDocument(
+  documentBytes: Buffer,
+  historyId: string,
+  entryId: number,
+  ownerAddr: string
+): Promise<ProcessedDocument> {
+  const prepared = await prepareDocument(documentBytes);
+  await storeDocumentKey(historyId, entryId, ownerAddr, prepared.entryKey);
 
   console.log(
     `[DocService] Processed entry ${entryId} for history ${historyId}: ` +
-    `blobId=${blobId}, contentHash=${contentHash.substring(0, 16)}..., size=${size}`
+    `blobId=${prepared.offChainRef}, contentHash=${prepared.contentHash.substring(0, 16)}..., size=${prepared.encryptedSize}`
   );
 
   return {
-    offChainRef: blobId,
-    contentHash,
-    encryptedSize: size,
+    offChainRef: prepared.offChainRef,
+    contentHash: prepared.contentHash,
+    encryptedSize: prepared.encryptedSize,
   };
 }

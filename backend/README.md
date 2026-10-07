@@ -19,18 +19,28 @@ REST API backend for the Decentralized Patient-Centric Portable Medical History 
 
 ## Authentication and Wallet Strategy
 
-Protected API calls require a bearer session created by signing a one-time
-wallet challenge:
+Protected API calls require a bearer session. Users can sign in with a Sui
+wallet by signing a one-time challenge, or with Google through Sui zkLogin:
 
-1. `POST /api/auth/challenge` with `{ "address": "0x..." }`.
-2. Sign the returned `message` with that wallet's personal-message feature.
-3. `POST /api/auth/verify` with the address, message, signature, and assigned role.
-4. Send `Authorization: Bearer <token>` on protected requests.
+1. Wallet login uses `POST /api/auth/challenge` and `POST /api/auth/verify` to
+    verify a signed one-time challenge.
+2. Google login uses a short-lived zkLogin nonce challenge, verifies Google's
+    ID token on the backend, and derives the Sui address from the verified
+    issuer, subject, audience, and server-held salt.
+3. Both login paths create the same role-checked backend session. Send
+    `Authorization: Bearer <token>` on protected requests.
 
 Patients may establish their own profile on first login. Staff roles must be
 assigned to their wallet in `user_profiles` before they can sign in with that
 role. The selected role is checked against the database; it is not trusted from
 the frontend route or session storage.
+
+Google zkLogin requires matching `GOOGLE_CLIENT_ID` in the backend and
+`VITE_ZKLOGIN_CLIENT_ID` in the frontend, plus a stable, server-only
+`ZKLOGIN_SALT_SECRET`. Configure the Google OAuth client's Authorized
+JavaScript origins for the app. Keep the salt secret backed up and unchanged:
+changing it will derive different Sui addresses. Apply migrations before using
+the Google login route.
 
 ## Current Sui Signing Limitation
 
@@ -44,6 +54,10 @@ Until that migration is completed, the backend relayer remains the on-chain
 transaction sender. REST authentication and authorization are enforced, but
 the on-chain `issuer` is still the relayer address. Do not use this mode for
 real medical data when per-person on-chain attribution is required.
+
+Google zkLogin currently establishes a stable zkLogin Sui address for the
+application session; it does not yet submit user-signed zkLogin transactions.
+The application continues to use the backend relayer described above.
 
 ## Prerequisites
 

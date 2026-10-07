@@ -3,13 +3,13 @@ import { useActiveAccount } from '@/lib/auth';
 import { usePatientHistory, useCreateHistory } from '@/hooks/use-patient';
 import { useFullHistory } from '@/hooks/use-history';
 import { useAuditLog } from '@/hooks/use-audit';
-import { patientImportApi } from '@/lib/api';
+import { documentApi, patientImportApi } from '@/lib/api';
 import { EntryCard } from '@/components/EntryCard';
 import { WalletAddress } from '@/components/WalletAddress';
 import { StatusBadge } from '@/components/StatusBadge';
 import { PageSkeleton, CardSkeleton } from '@/components/LoadingSkeleton';
 import { formatTimestamp } from '@/lib/utils';
-import type { HistoryEntry } from '@/types';
+import { ENTRY_TYPE_LABELS, type HistoryEntry } from '@/types';
 import {
   History,
   Shield,
@@ -32,6 +32,7 @@ export function PatientDashboard() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const [pdfEntryType, setPdfEntryType] = useState('');
   const patientAddr = account?.address || '';
 
   // Fetch the patient's history ID
@@ -67,6 +68,10 @@ export function PatientDashboard() {
     lookupError.message.toLowerCase().includes('no history found');
 
   const handleNoHistoryFile = (file: File) => {
+    if ((file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) && pdfEntryType === '') {
+      setImportError('Choose a PDF category before uploading');
+      return;
+    }
     setImportError(null);
     setImportSuccess(null);
     createHistory(patientAddr, {
@@ -76,7 +81,7 @@ export function PatientDashboard() {
           return;
         }
         setImporting(true);
-        patientImportApi.upload(file, patientAddr, data.historyId)
+        patientImportApi.upload(file, patientAddr, data.historyId, pdfEntryType === '' ? undefined : Number(pdfEntryType))
           .then((result) => {
             setImportSuccess(`${result.importedCount} record${result.importedCount === 1 ? '' : 's'} imported successfully.`);
             return refetchLookup();
@@ -98,11 +103,20 @@ export function PatientDashboard() {
   };
 
   const handleImport = async (file: File) => {
+    if ((file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) && pdfEntryType === '') {
+      setImportError('Choose a PDF category before uploading');
+      return;
+    }
     setImporting(true);
     setImportError(null);
     setImportSuccess(null);
     try {
-      const result = await patientImportApi.upload(file, patientAddr);
+      const result = await patientImportApi.upload(
+        file,
+        patientAddr,
+        undefined,
+        pdfEntryType === '' ? undefined : Number(pdfEntryType)
+      );
       setImportSuccess(`${result.importedCount} record${result.importedCount === 1 ? '' : 's'} imported successfully.`);
       await refetchHistory();
     } catch (err) {
@@ -111,6 +125,30 @@ export function PatientDashboard() {
       setImporting(false);
     }
   };
+
+  const handleViewDocument = async (entry: HistoryEntry): Promise<Blob> => {
+    if (!historyId || entry.id === undefined || !entry.offChainRef) {
+      throw new Error('Document details are unavailable');
+    }
+    return documentApi.download(entry.offChainRef, historyId, entry.id, entry.contentHash || undefined);
+  };
+
+  const pdfCategorySelector = (
+    <label className="mt-3 block max-w-xs text-xs font-medium text-slate-600">
+      PDF category
+      <select
+        value={pdfEntryType}
+        onChange={(event) => setPdfEntryType(event.target.value)}
+        disabled={importing || creatingHistory}
+        className="mt-1 block w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-slate-700"
+      >
+        <option value="">Choose a category</option>
+        {Object.entries(ENTRY_TYPE_LABELS).map(([value, label]) => (
+          <option key={value} value={value}>{label}</option>
+        ))}
+      </select>
+    </label>
+  );
 
   return (
     <div className="p-4 lg:p-6 max-w-4xl mx-auto space-y-6">
@@ -161,7 +199,8 @@ export function PatientDashboard() {
               }}
             />
           </label>
-          <p className="text-xs text-gray-500 mt-2">Choose a JSON or CSV file to create your history and import it.</p>
+            {pdfCategorySelector}
+            <p className="text-xs text-gray-500 mt-2">Upload a PDF as one encrypted document, or import existing JSON/CSV records.</p>
           {importError && <p className="text-xs text-red-600 mt-2">{importError}</p>}
         </div>
       )}
@@ -225,14 +264,15 @@ export function PatientDashboard() {
                   <div className="min-w-0 flex-1">
                     <h3 className="text-sm font-semibold text-slate-700">Import your medical history</h3>
                     <p className="text-xs text-gray-500 mt-1">
-                      Upload a JSON or CSV file. Each record must include an entryType (0–6 or a type name).
+                      Upload a PDF as one encrypted document, or import JSON/CSV records. Choose a category for PDFs.
                     </p>
+                    {pdfCategorySelector}
                     <label className="btn-primary mt-3 inline-flex cursor-pointer text-xs">
                       {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                       {importing ? 'Importing…' : 'Choose file'}
                       <input
                         type="file"
-                        accept=".json,.csv,application/json,text/csv"
+                        accept=".pdf,.json,.csv,application/pdf,application/json,text/csv"
                         className="sr-only"
                         disabled={importing}
                         onChange={(event) => {
@@ -293,6 +333,7 @@ export function PatientDashboard() {
                       entryId={entry.id ?? idx}
                       index={idx}
                       onVerify={handleVerifyEntry}
+                      onViewDocument={handleViewDocument}
                     />
                   ))}
                 </div>

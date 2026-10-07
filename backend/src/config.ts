@@ -40,6 +40,10 @@ export const config = {
   /** Application-wide salt for PBKDF2 key derivation. Change this to invalidate all wrapped keys. */
   ENCRYPTION_SALT: process.env.ENCRYPTION_SALT || 'medical-history-v1',
 
+  // Google zkLogin
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
+  ZKLOGIN_SALT_SECRET: process.env.ZKLOGIN_SALT_SECRET || '',
+
   // Walrus storage
   WALRUS_ENABLED: process.env.WALRUS_ENABLED !== 'false',
   WALRUS_PUBLISHER_URL:

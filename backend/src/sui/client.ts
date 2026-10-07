@@ -1,4 +1,5 @@
 import { SuiGrpcClient } from '@mysten/sui/grpc';
+import { bcs } from '@mysten/sui/bcs';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { fromHex } from '@mysten/sui/utils';
 import { config } from '../config';
@@ -80,42 +81,34 @@ export async function getSuiObject(objectId: string): Promise<any> {
  * dynamic fields and are not included in the parent Move object's JSON.
  */
 export async function getSuiDynamicFields(objectId: string): Promise<any[]> {
-  const response = await fetch(config.SUI_GRAPHQL_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      query: `
-        query GetDynamicFields($address: SuiAddress!) {
-          object(address: $address) {
-            dynamicFields {
-              nodes {
-                name { type value }
-                value {
-                  ... on MoveObject {
-                    contents { json }
-                  }
-                }
-              }
-            }
-          }
-        }
-      `,
-      variables: { address: objectId },
-    }),
-  });
+  const client = getSuiClient();
+  const entries: any[] = [];
+  let cursor: string | null = null;
 
-  if (!response.ok) {
-    throw new Error(`Sui GraphQL dynamic fields request failed: ${response.status}`);
-  }
+  do {
+    const page: {
+      dynamicFields: Array<{ fieldId: string; name: { bcs: Uint8Array } }>;
+      cursor: string | null;
+    } = await client.listDynamicFields({ parentId: objectId, limit: 50, cursor });
+    const pageEntries = await Promise.all(page.dynamicFields.map(async (field) => {
+      const { object } = await client.getObject({
+        objectId: field.fieldId,
+        include: { json: true },
+      });
+      if (!object.json) throw new Error('Sui dynamic field has no JSON value');
+      return {
+        fields: {
+          key: bcs.U64.parse(field.name.bcs).toString(),
+          value: object.json.value,
+        },
+      };
+    }));
 
-  const payload = await response.json() as {
-    data?: { object?: { dynamicFields?: { nodes?: any[] } } | null };
-    errors?: Array<{ message?: string }>;
-  };
-  if (payload.errors?.length) {
-    throw new Error(payload.errors.map((error) => error.message || 'GraphQL error').join('; '));
-  }
-  return payload.data?.object?.dynamicFields?.nodes || [];
+    entries.push(...pageEntries);
+    cursor = page.cursor;
+  } while (cursor);
+
+  return entries;
 }
 
 /**

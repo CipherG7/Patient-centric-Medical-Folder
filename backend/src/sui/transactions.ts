@@ -276,9 +276,15 @@ export async function buildAddEntryPTB(
     ? tx.pure(bcs.vector(bcs.u8()).serialize(new TextEncoder().encode(offChainRef)))
     : tx.pure(bcs.vector(bcs.u8()).serialize(new Uint8Array(offChainRef)));
 
-  const hashBytes = typeof contentHash === 'string'
-    ? tx.pure(bcs.vector(bcs.u8()).serialize(new TextEncoder().encode(contentHash)))
-    : tx.pure(bcs.vector(bcs.u8()).serialize(new Uint8Array(contentHash)));
+  const hashValue = typeof contentHash === 'string'
+    ? contentHash.replace(/^0x/i, '')
+    : null;
+  const hashData = hashValue && /^[0-9a-f]+$/i.test(hashValue) && hashValue.length % 2 === 0
+    ? Buffer.from(hashValue, 'hex')
+    : typeof contentHash === 'string'
+      ? Buffer.from(contentHash, 'utf8')
+      : Buffer.from(contentHash);
+  const hashBytes = tx.pure(bcs.vector(bcs.u8()).serialize(hashData));
 
   const historyRef =
     sharedObjectRefs?.history ?? (await fetchSharedObjectRef(historyId, true));

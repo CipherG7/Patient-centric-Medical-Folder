@@ -14,6 +14,7 @@ import multer from 'multer';
 import { getSuiClient, getAdminKeypair } from '../sui/client';
 import { buildCreateHistoryPTB, buildAddEntryPTB, executeTx, checkExistingHistory } from '../sui/transactions';
 import { getSharedObjectIds, parseEvents } from '../utils/sui-helpers';
+import { prepareDocument, storeDocumentKey } from '../storage/document-service';
 import { AppError } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
 import { apiKeyAuth, requireUserAddress } from '../middleware/auth';
@@ -250,7 +251,7 @@ router.post(
 );
 
 /**
- * Import patient-provided JSON or CSV records into the on-chain history.
+ * Import patient-provided PDF, JSON, or CSV records into the on-chain history.
  * JSON may be an array or { "entries": [...] }. CSV must include entryType
  * (or type); additional columns are retained for display.
  */
@@ -264,8 +265,28 @@ router.post(
       if (!req.file) throw new AppError('History file is required', 400);
       const { addr } = req.params;
       requireUserAddress(addr, req);
-      const records = parseImportFile(req.file);
-      const typedRecords = records.map((record) => ({
+      const isPdf = req.file.originalname.toLowerCase().endsWith('.pdf') ||
+        req.file.mimetype === 'application/pdf';
+      if (isPdf && req.file.buffer.subarray(0, 5).toString('ascii') !== '%PDF-') {
+        throw new AppError('The uploaded file is not a valid PDF document', 400);
+      }
+
+      const records = isPdf ? [] : parseImportFile(req.file);
+      const pdfEntryType = Number(req.body.entryType);
+      if (isPdf && (!Number.isInteger(pdfEntryType) || pdfEntryType < 0 || pdfEntryType > 6)) {
+        throw new AppError('Choose a supported medical document category for this PDF', 400);
+      }
+      const typedRecords = isPdf
+        ? [{
+          record: {
+            entryType: pdfEntryType,
+            documentType: 'pdf',
+            fileName: req.file.originalname,
+            fileSize: req.file.size,
+          },
+          entryType: pdfEntryType,
+        }]
+        : records.map((record) => ({
         record,
         entryType: getEntryType(record),
       }));
@@ -294,8 +315,10 @@ router.post(
       let importedCount = 0;
 
       for (const { record, entryType } of typedRecords) {
-        const contentHash = crypto.createHash('sha256').update(JSON.stringify(record)).digest('hex');
-        const offChainRef = `patient-import://${importId}/${importedCount}`;
+        const preparedDocument = isPdf ? await prepareDocument(req.file.buffer) : undefined;
+        const contentHash = preparedDocument?.contentHash ??
+          crypto.createHash('sha256').update(JSON.stringify(record)).digest('hex');
+        const offChainRef = preparedDocument?.offChainRef ?? `patient-import://${importId}/${importedCount}`;
         const tx = await buildAddEntryPTB(
           sharedIds,
           historyId,
@@ -313,6 +336,9 @@ router.post(
         }
 
         const entryId = Number(event.entry_id);
+        if (preparedDocument) {
+          await storeDocumentKey(historyId, entryId, addr, preparedDocument.entryKey);
+        }
         await db.query(
           `INSERT INTO history_import_entries (history_id, entry_id, source_name, record)
            VALUES ($1, $2, $3, $4)

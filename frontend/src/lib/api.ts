@@ -64,6 +64,18 @@ export const authApi = {
     request<AuthChallengeResponse>('POST', '/auth/challenge', { address }),
   verify: (address: string, message: string, signature: string, role: string) =>
     request<AuthSessionResponse>('POST', '/auth/verify', { address, message, signature, role }),
+  zkLoginChallenge: (data: { ephemeralPublicKey: string; randomness: string }) =>
+    request<{ challengeId: string; nonce: string; maxEpoch: number; expiresAt: string }>(
+      'POST',
+      '/auth/zklogin/challenge',
+      data
+    ),
+  zkLoginVerify: (challengeId: string, idToken: string, role: string) =>
+    request<AuthSessionResponse>(
+      'POST',
+      '/auth/zklogin/verify',
+      { challengeId, idToken, role }
+    ),
   logout: () => request<void>('POST', '/auth/logout'),
 };
 
@@ -314,6 +326,18 @@ export const documentApi = {
     if (contentHash) params.set('contentHash', contentHash);
     return `${API_BASE}/documents/${cid}?${params.toString()}`;
   },
+
+  download: async (cid: string, historyId: string, entryId: number, contentHash?: string): Promise<Blob> => {
+    const token = getSessionToken();
+    const response = await fetch(documentApi.getDownloadUrl(cid, historyId, entryId, contentHash), {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(errorData.error || `Download failed: ${response.status}`);
+    }
+    return response.blob();
+  },
 };
 
 export interface ImportHistoryResponse {
@@ -323,10 +347,11 @@ export interface ImportHistoryResponse {
 }
 
 export const patientImportApi = {
-  upload: async (file: File, patientAddr: string, historyId?: string): Promise<ImportHistoryResponse> => {
+  upload: async (file: File, patientAddr: string, historyId?: string, entryType?: number): Promise<ImportHistoryResponse> => {
     const formData = new FormData();
     formData.append('history', file);
     if (historyId) formData.append('historyId', historyId);
+    if (entryType !== undefined) formData.append('entryType', entryType.toString());
     const response = await fetch(`${API_BASE}/patients/${patientAddr}/import`, {
       method: 'POST',
       headers: getSessionToken() ? { Authorization: `Bearer ${getSessionToken()}` } : {},

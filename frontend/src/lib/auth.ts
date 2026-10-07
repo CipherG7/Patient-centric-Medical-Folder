@@ -17,13 +17,15 @@ export function useActiveAccount(): ActiveAccount | null {
 }
 
 export function clearZkLoginSession() {
-  localStorage.removeItem('zklogin_jwt');
   localStorage.removeItem('zklogin_address');
-  localStorage.removeItem('zklogin_salt');
-  localStorage.removeItem('zklogin_randomness');
-  localStorage.removeItem('zklogin_max_epoch');
-  localStorage.removeItem('zklogin_ephemeral_secret');
-  localStorage.removeItem('zklogin_ephemeral_public');
   localStorage.removeItem('zklogin_issuer');
   localStorage.removeItem('zklogin_subject');
+  sessionStorage.removeItem('zklogin_jwt');
+  sessionStorage.removeItem('zklogin_salt');
+  sessionStorage.removeItem('zklogin_randomness');
+  sessionStorage.removeItem('zklogin_max_epoch');
+  sessionStorage.removeItem('zklogin_ephemeral_secret');
+  sessionStorage.removeItem('zklogin_ephemeral_public');
+  sessionStorage.removeItem('zklogin_pending_jwt');
+  sessionStorage.removeItem('zklogin_pending_challenge_id');
 }
