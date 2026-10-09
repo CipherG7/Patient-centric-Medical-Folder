@@ -57,24 +57,25 @@ export interface AuthSessionResponse {
   address: string;
   role: string;
   expiresAt: string;
+  termsAccepted: boolean;
 }
 
 export const authApi = {
   challenge: (address: string) =>
     request<AuthChallengeResponse>('POST', '/auth/challenge', { address }),
-  verify: (address: string, message: string, signature: string, role: string) =>
-    request<AuthSessionResponse>('POST', '/auth/verify', { address, message, signature, role }),
+  verify: (address: string, message: string, signature: string, role: string, acceptedTerms: boolean) =>
+    request<AuthSessionResponse>('POST', '/auth/verify', { address, message, signature, role, acceptedTerms }),
   zkLoginChallenge: (data: { ephemeralPublicKey: string; randomness: string }) =>
     request<{ challengeId: string; nonce: string; maxEpoch: number; expiresAt: string }>(
       'POST',
       '/auth/zklogin/challenge',
       data
     ),
-  zkLoginVerify: (challengeId: string, idToken: string, role: string) =>
+  zkLoginVerify: (challengeId: string, idToken: string, role: string, acceptedTerms: boolean) =>
     request<AuthSessionResponse>(
       'POST',
       '/auth/zklogin/verify',
-      { challengeId, idToken, role }
+      { challengeId, idToken, role, acceptedTerms }
     ),
   logout: () => request<void>('POST', '/auth/logout'),
 };

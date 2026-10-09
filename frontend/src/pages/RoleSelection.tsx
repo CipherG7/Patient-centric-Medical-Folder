@@ -20,6 +20,7 @@ export function RoleSelection() {
   const [selectedRole, setSelectedRole] = useState<UserRole>('patient');
   const [authError, setAuthError] = useState('');
   const [authenticating, setAuthenticating] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const navigate = useNavigate();
   const account = useActiveAccount();
   const walletAccount = useCurrentAccount();
@@ -36,7 +37,12 @@ export function RoleSelection() {
       const pendingToken = sessionStorage.getItem('zklogin_pending_jwt');
       const pendingChallengeId = sessionStorage.getItem('zklogin_pending_challenge_id');
       if (pendingToken && pendingChallengeId) {
-        const session = await authApi.zkLoginVerify(pendingChallengeId, pendingToken, selectedRole);
+        const session = await authApi.zkLoginVerify(
+          pendingChallengeId,
+          pendingToken,
+          selectedRole,
+          acceptedTerms
+        );
         localStorage.setItem('zklogin_address', session.address);
         localStorage.setItem('zklogin_issuer', 'https://accounts.google.com');
         sessionStorage.removeItem('zklogin_pending_jwt');
@@ -47,6 +53,7 @@ export function RoleSelection() {
         sessionStorage.removeItem('zklogin_max_epoch');
         localStorage.setItem('auth_session', session.token);
         localStorage.setItem('auth_role', session.role);
+        localStorage.setItem('terms_accepted', 'true');
         sessionStorage.setItem('selectedRole', session.role);
         navigate('/dashboard', { state: { role: session.role } });
         return;
@@ -70,10 +77,12 @@ export function RoleSelection() {
         walletAccount.address,
         challenge.message,
         signed.signature,
-        selectedRole
+        selectedRole,
+        acceptedTerms
       );
       localStorage.setItem('auth_session', session.token);
       localStorage.setItem('auth_role', session.role);
+      localStorage.setItem('terms_accepted', 'true');
       sessionStorage.setItem('selectedRole', session.role);
       navigate('/dashboard', { state: { role: session.role } });
     } catch (error) {
@@ -130,6 +139,17 @@ export function RoleSelection() {
             ))}
           </div>
           {authError && <p className="mt-4 text-center text-xs text-red-600">{authError}</p>}
+          <label className="mt-6 flex items-start gap-3 text-xs leading-5 text-slate-600">
+            <input
+              type="checkbox"
+              checked={acceptedTerms}
+              onChange={(event) => setAcceptedTerms(event.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+            />
+            <span>
+              I agree to the <a href="/terms" target="_blank" rel="noreferrer" className="font-semibold text-teal-700 underline">Terms and Conditions</a> and <a href="/privacy" target="_blank" rel="noreferrer" className="font-semibold text-teal-700 underline">Privacy Policy</a>.
+            </span>
+          </label>
           <button onClick={handleContinue} disabled={authenticating} className="btn-primary mt-6 w-full">
             {authenticating
               ? isGoogleLogin ? 'Verifying Google sign-in…' : 'Authenticating wallet…'

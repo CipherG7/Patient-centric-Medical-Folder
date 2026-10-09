@@ -1,0 +1,5 @@
+ALTER TABLE user_profiles
+  ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS terms_version VARCHAR(32),
+  ADD COLUMN IF NOT EXISTS privacy_accepted_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS privacy_version VARCHAR(32);

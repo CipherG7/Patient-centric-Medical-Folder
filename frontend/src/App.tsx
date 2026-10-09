@@ -15,6 +15,8 @@ import { LabTechDashboard } from '@/pages/LabTechDashboard';
 import { HospitalAdminDashboard } from '@/pages/HospitalAdminDashboard';
 import { PlatformAdminDashboard } from '@/pages/PlatformAdminDashboard';
 import { Settings } from '@/pages/Settings';
+import { Terms } from '@/pages/Terms';
+import { Privacy } from '@/pages/Privacy';
 import type { UserRole } from '@/types';
 import '@mysten/dapp-kit/dist/index.css';
 
@@ -138,6 +140,8 @@ export default function App() {
               <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Welcome />} />
               <Route path="/choose-role" element={<RoleSelection />} />
+              <Route path="/terms" element={<Terms />} />
+              <Route path="/privacy" element={<Privacy />} />
 
               {/* Dashboard shell with dynamic role-based routing */}
               <Route path="/dashboard" element={<DashboardRouter />}>

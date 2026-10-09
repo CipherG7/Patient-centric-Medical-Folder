@@ -16,6 +16,8 @@ import { recordOffchainAuditEvent } from '../audit/offchain';
 const router = Router();
 const AddressSchema = z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address');
 const RoleSchema = z.enum(['patient', 'doctor', 'lab_tech', 'pharmacist', 'hospital_admin', 'platform_admin']);
+const CURRENT_TERMS_VERSION = '1.0';
+const CURRENT_PRIVACY_VERSION = '1.0';
 
 const ChallengeSchema = z.object({ address: AddressSchema });
 const VerifySchema = z.object({
@@ -23,6 +25,7 @@ const VerifySchema = z.object({
   message: z.string().min(1).max(512),
   signature: z.string().min(1),
   role: RoleSchema,
+  acceptedTerms: z.boolean(),
 });
 const ZkLoginChallengeSchema = z.object({
   ephemeralPublicKey: z.string().regex(/^[A-Za-z0-9+/]+={0,2}$/),
@@ -32,6 +35,7 @@ const ZkLoginVerifySchema = z.object({
   challengeId: z.string().uuid(),
   idToken: z.string().min(1),
   role: RoleSchema,
+  acceptedTerms: z.boolean(),
 });
 
 const googleAuth = new OAuth2Client();
@@ -47,21 +51,52 @@ function getZkLoginSalt(issuer: string, audience: string, subject: string): stri
 async function createSession(
   address: string,
   role: z.infer<typeof RoleSchema>,
+  acceptedTerms: boolean,
   requestId?: string
 ) {
   const db = getDb();
-  const profile = await db.query('SELECT role FROM user_profiles WHERE user_address = $1', [address]);
+  const profile = await db.query(
+    `SELECT role, terms_version, privacy_version
+     FROM user_profiles WHERE user_address = $1`,
+    [address]
+  );
   const isDualRoleWallet = address === DUAL_ROLE_ADDRESS;
   if (profile.rows.length === 0) {
     if (role !== 'patient' && !(isDualRoleWallet && (role === 'doctor' || role === 'platform_admin'))) {
       throw new AppError('This wallet has no assigned staff role', 403);
     }
-    await db.query('INSERT INTO user_profiles (user_address, role) VALUES ($1, $2)', [address, role]);
+    if (!acceptedTerms) {
+      throw new AppError('You must accept the Terms and Conditions and Privacy Policy before continuing', 400);
+    }
+    await db.query(
+      `INSERT INTO user_profiles
+       (user_address, role, terms_accepted_at, terms_version, privacy_accepted_at, privacy_version)
+       VALUES ($1, $2, now(), $3, now(), $4)`,
+      [address, role, CURRENT_TERMS_VERSION, CURRENT_PRIVACY_VERSION]
+    );
   } else if (
     profile.rows[0].role !== role &&
     !(isDualRoleWallet && (role === 'patient' || role === 'doctor' || role === 'platform_admin'))
   ) {
     throw new AppError('The selected role is not assigned to this wallet', 403);
+  }
+  if (profile.rows.length > 0) {
+    const hasCurrentAcceptance =
+      profile.rows[0].terms_version === CURRENT_TERMS_VERSION &&
+      profile.rows[0].privacy_version === CURRENT_PRIVACY_VERSION;
+    if (!hasCurrentAcceptance && !acceptedTerms) {
+      throw new AppError('You must accept the current Terms and Conditions and Privacy Policy before continuing', 400);
+    }
+    if (!hasCurrentAcceptance) {
+      await db.query(
+        `UPDATE user_profiles
+         SET terms_accepted_at = now(), terms_version = $2,
+             privacy_accepted_at = now(), privacy_version = $3,
+             updated_at = now()
+         WHERE user_address = $1`,
+        [address, CURRENT_TERMS_VERSION, CURRENT_PRIVACY_VERSION]
+      );
+    }
   }
 
   const token = crypto.randomBytes(48).toString('base64url');
@@ -76,10 +111,10 @@ async function createSession(
     actorRole: role,
     targetType: 'session',
     result: 'success',
-    metadata: { method: 'zklogin' },
+    metadata: { method: 'zklogin', termsVersion: CURRENT_TERMS_VERSION },
     requestId,
   });
-  return { token, address, role, expiresAt: expiresAt.toISOString() };
+  return { token, address, role, expiresAt: expiresAt.toISOString(), termsAccepted: true };
 }
 
 router.post('/challenge', validate({ body: ChallengeSchema }), async (req, res, next) => {
@@ -142,7 +177,7 @@ router.post('/zklogin/verify', validate({ body: ZkLoginVerifySchema }), async (r
     if (!config.GOOGLE_CLIENT_ID || !config.ZKLOGIN_SALT_SECRET) {
       throw new AppError('Google zkLogin is not configured on this server', 503);
     }
-    const { challengeId, idToken, role } = req.body;
+    const { challengeId, idToken, role, acceptedTerms } = req.body;
     let payload;
     try {
       const ticket = await googleAuth.verifyIdToken({
@@ -164,6 +199,21 @@ router.post('/zklogin/verify', validate({ body: ZkLoginVerifySchema }), async (r
     }
 
     const db = getDb();
+    const audience = Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
+    const salt = getZkLoginSalt(payload.iss, audience, payload.sub);
+    const address = jwtToAddress(idToken, salt, false).toLowerCase();
+    attemptedAddress = address;
+    const existingProfile = await db.query(
+      `SELECT terms_version, privacy_version
+       FROM user_profiles WHERE user_address = $1`,
+      [address]
+    );
+    const hasCurrentAcceptance =
+      existingProfile.rows[0]?.terms_version === CURRENT_TERMS_VERSION &&
+      existingProfile.rows[0]?.privacy_version === CURRENT_PRIVACY_VERSION;
+    if (!hasCurrentAcceptance && !acceptedTerms) {
+      throw new AppError('You must accept the current Terms and Conditions and Privacy Policy before continuing', 400);
+    }
     const consumedChallenge = await db.query(
       `UPDATE zklogin_challenges SET used_at = now()
        WHERE challenge_id = $1 AND nonce = $2 AND used_at IS NULL AND expires_at > now()
@@ -173,12 +223,7 @@ router.post('/zklogin/verify', validate({ body: ZkLoginVerifySchema }), async (r
     if (consumedChallenge.rows.length === 0) {
       throw new AppError('zkLogin challenge is invalid, expired, or already used', 401);
     }
-
-    const audience = Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
-    const salt = getZkLoginSalt(payload.iss, audience, payload.sub);
-    const address = jwtToAddress(idToken, salt, false).toLowerCase();
-    attemptedAddress = address;
-    const session = await createSession(address, role, req.requestId);
+    const session = await createSession(address, role, acceptedTerms, req.requestId);
     res.json(session);
   } catch (err) {
     await recordOffchainAuditEvent({
@@ -196,7 +241,7 @@ router.post('/zklogin/verify', validate({ body: ZkLoginVerifySchema }), async (r
 
 router.post('/verify', validate({ body: VerifySchema }), async (req, res, next) => {
   try {
-    const { address: rawAddress, message, signature, role } = req.body;
+    const { address: rawAddress, message, signature, role, acceptedTerms } = req.body;
     const address = rawAddress.toLowerCase();
     const db = getDb();
     const challenge = await db.query(
@@ -215,21 +260,49 @@ router.post('/verify', validate({ body: VerifySchema }), async (req, res, next) 
       throw new AppError('Wallet signature could not be verified', 401);
     }
 
-    await db.query('UPDATE auth_challenges SET used_at = now() WHERE challenge_id = $1', [challenge.rows[0].challenge_id]);
-
-    const profile = await db.query('SELECT role FROM user_profiles WHERE user_address = $1', [address]);
+    const profile = await db.query(
+      `SELECT role, terms_version, privacy_version
+       FROM user_profiles WHERE user_address = $1`,
+      [address]
+    );
     const isDualRoleWallet = address === DUAL_ROLE_ADDRESS;
     if (profile.rows.length === 0) {
       if (role !== 'patient' && !(isDualRoleWallet && (role === 'doctor' || role === 'platform_admin'))) {
         throw new AppError('This wallet has no assigned staff role', 403);
       }
-      await db.query('INSERT INTO user_profiles (user_address, role) VALUES ($1, $2)', [address, role]);
+      if (!acceptedTerms) {
+        throw new AppError('You must accept the Terms and Conditions and Privacy Policy before continuing', 400);
+      }
+      await db.query(
+        `INSERT INTO user_profiles
+         (user_address, role, terms_accepted_at, terms_version, privacy_accepted_at, privacy_version)
+         VALUES ($1, $2, now(), $3, now(), $4)`,
+        [address, role, CURRENT_TERMS_VERSION, CURRENT_PRIVACY_VERSION]
+      );
     } else if (
       profile.rows[0].role !== role &&
       !(isDualRoleWallet && (role === 'patient' || role === 'doctor' || role === 'platform_admin'))
     ) {
       throw new AppError('The selected role is not assigned to this wallet', 403);
     }
+    const hasCurrentAcceptance =
+      profile.rows.length > 0 &&
+      profile.rows[0].terms_version === CURRENT_TERMS_VERSION &&
+      profile.rows[0].privacy_version === CURRENT_PRIVACY_VERSION;
+    if (profile.rows.length > 0 && !hasCurrentAcceptance) {
+      if (!acceptedTerms) {
+        throw new AppError('You must accept the current Terms and Conditions and Privacy Policy before continuing', 400);
+      }
+      await db.query(
+        `UPDATE user_profiles
+         SET terms_accepted_at = now(), terms_version = $2,
+             privacy_accepted_at = now(), privacy_version = $3,
+             updated_at = now()
+         WHERE user_address = $1`,
+        [address, CURRENT_TERMS_VERSION, CURRENT_PRIVACY_VERSION]
+      );
+    }
+    await db.query('UPDATE auth_challenges SET used_at = now() WHERE challenge_id = $1', [challenge.rows[0].challenge_id]);
 
     const token = crypto.randomBytes(48).toString('base64url');
     const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
@@ -248,7 +321,7 @@ router.post('/verify', validate({ body: VerifySchema }), async (req, res, next) 
       requestId: req.requestId,
     });
 
-    res.json({ token, address, role, expiresAt: expiresAt.toISOString() });
+    res.json({ token, address, role, expiresAt: expiresAt.toISOString(), termsAccepted: true });
   } catch (err) {
     const candidateAddress = req.body?.address;
     await recordOffchainAuditEvent({
