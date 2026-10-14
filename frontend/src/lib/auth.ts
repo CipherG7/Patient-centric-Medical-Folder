@@ -1,5 +1,12 @@
 import { useCurrentAccount } from '@mysten/dapp-kit';
 
+export const PLATFORM_ADMIN_ADDRESS =
+  '0xe148af1066ce54c8cb9e4e6c3b4d57596d677c9060ab562f13dbb36b575675cf';
+
+export function isPlatformAdminAddress(address: string | null | undefined): boolean {
+  return address?.toLowerCase() === PLATFORM_ADMIN_ADDRESS;
+}
+
 export interface ActiveAccount {
   address: string;
 }

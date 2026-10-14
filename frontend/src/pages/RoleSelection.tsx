@@ -1,5 +1,5 @@
 import { useNavigate, Navigate } from 'react-router-dom';
-import { useActiveAccount } from '@/lib/auth';
+import { isPlatformAdminAddress, useActiveAccount } from '@/lib/auth';
 import { useCurrentAccount, useSignPersonalMessage } from '@mysten/dapp-kit';
 import { authApi } from '@/lib/api';
 import { roleLabel } from '@/lib/utils';
@@ -13,7 +13,6 @@ const roles: { value: UserRole; icon: React.ReactNode; description: string }[] =
   { value: 'lab_tech', icon: <FlaskConical className="h-5 w-5" />, description: 'Upload lab results, add new entries to patient records' },
   { value: 'pharmacist', icon: <FlaskConical className="h-5 w-5" />, description: 'Add prescriptions and pharmaceutical records' },
   { value: 'hospital_admin', icon: <Building2 className="h-5 w-5" />, description: 'Manage institutional staff wallets and credentials' },
-  { value: 'platform_admin', icon: <Shield className="h-5 w-5" />, description: 'Verify institutions, manage platform-wide settings' },
 ];
 
 export function RoleSelection() {
@@ -28,6 +27,9 @@ export function RoleSelection() {
 
   const pendingGoogleToken = sessionStorage.getItem('zklogin_pending_jwt');
   const isGoogleLogin = Boolean(pendingGoogleToken);
+  const availableRoles = isPlatformAdminAddress(account?.address)
+    ? [...roles, { value: 'platform_admin' as const, icon: <Shield className="h-5 w-5" />, description: 'Verify institutions, manage platform-wide settings' }]
+    : roles;
   if (!account && !pendingGoogleToken) return <Navigate to="/login" replace />;
 
   const handleContinue = async () => {
@@ -119,7 +121,7 @@ export function RoleSelection() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Choose your role</h1>
           <p className="mt-2 text-sm text-slate-500">Choose the workspace that best describes how you use HealthVault.</p>
           <div className="mt-6 grid gap-2 sm:grid-cols-2">
-            {roles.map((role) => (
+            {availableRoles.map((role) => (
               <button
                 key={role.value}
                 onClick={() => setSelectedRole(role.value)}

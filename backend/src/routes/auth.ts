@@ -8,7 +8,7 @@ import { OAuth2Client } from 'google-auth-library';
 import { getDb } from '../db';
 import { validate } from '../middleware/validate';
 import { AppError } from '../middleware/errorHandler';
-import { DUAL_ROLE_ADDRESS } from '../middleware/auth';
+import { DUAL_ROLE_ADDRESS, isPlatformAdminAddress } from '../middleware/auth';
 import { config } from '../config';
 import { getSuiClient } from '../sui/client';
 import { recordOffchainAuditEvent } from '../audit/offchain';
@@ -61,6 +61,9 @@ async function createSession(
     [address]
   );
   const isDualRoleWallet = address === DUAL_ROLE_ADDRESS;
+  if (role === 'platform_admin' && !isPlatformAdminAddress(address)) {
+    throw new AppError('This wallet is not authorized as a platform administrator', 403);
+  }
   if (profile.rows.length === 0) {
     if (role !== 'patient' && !(isDualRoleWallet && (role === 'doctor' || role === 'platform_admin'))) {
       throw new AppError('This wallet has no assigned staff role', 403);
@@ -266,6 +269,9 @@ router.post('/verify', validate({ body: VerifySchema }), async (req, res, next) 
       [address]
     );
     const isDualRoleWallet = address === DUAL_ROLE_ADDRESS;
+    if (role === 'platform_admin' && !isPlatformAdminAddress(address)) {
+      throw new AppError('This wallet is not authorized as a platform administrator', 403);
+    }
     if (profile.rows.length === 0) {
       if (role !== 'patient' && !(isDualRoleWallet && (role === 'doctor' || role === 'platform_admin'))) {
         throw new AppError('This wallet has no assigned staff role', 403);

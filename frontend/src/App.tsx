@@ -17,6 +17,7 @@ import { PlatformAdminDashboard } from '@/pages/PlatformAdminDashboard';
 import { Settings } from '@/pages/Settings';
 import { Terms } from '@/pages/Terms';
 import { Privacy } from '@/pages/Privacy';
+import { isPlatformAdminAddress, useActiveAccount } from '@/lib/auth';
 import type { UserRole } from '@/types';
 import '@mysten/dapp-kit/dist/index.css';
 
@@ -51,11 +52,17 @@ const VALID_ROLES: UserRole[] = ['patient', 'doctor', 'lab_tech', 'pharmacist', 
 
 function DashboardRouter() {
   const location = useLocation();
+  const account = useActiveAccount();
   const stateRole = (location.state as { role?: UserRole })?.role;
   const storedRole = sessionStorage.getItem('selectedRole') as UserRole | null;
 
   // Prefer route state, fall back to sessionStorage, validate the value
   const role = stateRole || (storedRole && VALID_ROLES.includes(storedRole) ? storedRole : undefined);
+
+  if (role === 'platform_admin' && !isPlatformAdminAddress(account?.address)) {
+    sessionStorage.removeItem('selectedRole');
+    return <Navigate to="/choose-role" replace />;
+  }
 
   // If no role is found, redirect back to Welcome page
   if (!role) {

@@ -9,6 +9,10 @@ export type UserRole = 'patient' | 'doctor' | 'lab_tech' | 'pharmacist' | 'hospi
 // This deployment wallet is allowed to use both the patient and platform-admin workspaces.
 export const DUAL_ROLE_ADDRESS = '0xe148af1066ce54c8cb9e4e6c3b4d57596d677c9060ab562f13dbb36b575675cf';
 
+export function isPlatformAdminAddress(address: string): boolean {
+  return address.toLowerCase() === DUAL_ROLE_ADDRESS;
+}
+
 /**
  * Extend Express Request to include authenticated user info.
  */
@@ -46,7 +50,13 @@ export async function apiKeyAuth(req: Request, res: Response, next: NextFunction
     return;
   }
 
-  req.user = { address: rows[0].user_address, role: rows[0].role };
+  const address = String(rows[0].user_address).toLowerCase();
+  const role = rows[0].role as UserRole;
+  if (role === 'platform_admin' && !isPlatformAdminAddress(address)) {
+    res.status(403).json({ error: 'Forbidden', message: 'This wallet is not authorized as a platform administrator.' });
+    return;
+  }
+  req.user = { address, role };
 
   next();
 }
@@ -61,13 +71,23 @@ export async function optionalAuth(req: Request, _res: Response, next: NextFunct
      WHERE s.token = $1 AND s.expires_at > now()`,
     [token]
   );
-  if (rows.length > 0) req.user = { address: rows[0].user_address, role: rows[0].role };
+  if (rows.length > 0) {
+    const address = String(rows[0].user_address).toLowerCase();
+    const role = rows[0].role as UserRole;
+    if (role !== 'platform_admin' || isPlatformAdminAddress(address)) {
+      req.user = { address, role };
+    }
+  }
   next();
 }
 
 export function requireRole(...roles: UserRole[]) {
   return (req: Request, res: Response, next: NextFunction): void => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (
+      !req.user ||
+      !roles.includes(req.user.role) ||
+      (req.user.role === 'platform_admin' && !isPlatformAdminAddress(req.user.address))
+    ) {
       res.status(403).json({ error: 'Forbidden', message: 'Your assigned role cannot perform this action.' });
       return;
     }
@@ -80,4 +100,3 @@ export function requireUserAddress(address: string, req: Request): void {
     throw new AppError('The requested wallet address does not belong to the authenticated user', 403);
   }
 }
-
