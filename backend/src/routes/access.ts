@@ -25,6 +25,29 @@ import { recordOffchainAuditEvent } from '../audit/offchain';
 
 const router = Router();
 
+async function createAccessNotification(input: {
+  recipientAddr: string;
+  actorAddr: string;
+  type: string;
+  title: string;
+  message: string;
+  metadata: Record<string, unknown>;
+}): Promise<void> {
+  await getDb().query(
+    `INSERT INTO notifications
+      (recipient_addr, actor_addr, type, title, message, metadata)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      input.recipientAddr.toLowerCase(),
+      input.actorAddr.toLowerCase(),
+      input.type,
+      input.title,
+      input.message,
+      JSON.stringify(input.metadata),
+    ]
+  );
+}
+
 async function requireHistoryOwner(historyId: string, address: string): Promise<void> {
   const history = await getSuiObject(historyId);
   const owner = history.data?.content?.fields?.owner;
@@ -98,6 +121,14 @@ router.post(
         metadata: { expiresAtMs: expiryMs },
         requestId: req.requestId,
       });
+      await createAccessNotification({
+        recipientAddr: granteeAddr,
+        actorAddr: req.user!.address,
+        type: 'access_granted',
+        title: 'Access granted',
+        message: `You were granted ${'full'} access to a patient's medical history.`,
+        metadata: { historyId, scope: 'full', digest: result.digest },
+      });
 
       res.status(201).json({
         success: true,
@@ -152,6 +183,14 @@ router.post(
         metadata: { expiresAtMs: expiryMs, entryCount: entryIds.length },
         requestId: req.requestId,
       });
+      await createAccessNotification({
+        recipientAddr: granteeAddr,
+        actorAddr: req.user!.address,
+        type: 'access_granted',
+        title: 'Partial access granted',
+        message: `You were granted access to ${entryIds.length} medical history entr${entryIds.length === 1 ? 'y' : 'ies'}.`,
+        metadata: { historyId, scope: 'partial', entryIds, digest: result.digest },
+      });
 
       res.status(201).json({
         success: true,
@@ -199,6 +238,14 @@ router.post(
         result: 'success',
         requestId: req.requestId,
       });
+      await createAccessNotification({
+        recipientAddr: granteeAddr,
+        actorAddr: req.user!.address,
+        type: 'access_revoked',
+        title: 'Access revoked',
+        message: 'Your access to a patient’s medical history was revoked.',
+        metadata: { historyId, digest: result.digest },
+      });
 
       res.json({
         success: true,
@@ -213,4 +260,3 @@ router.post(
 );
 
 export default router;
-

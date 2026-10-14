@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useActiveAccount } from '@/lib/auth';
+import { useMutation } from '@tanstack/react-query';
+import { accessRequestApi } from '@/lib/api';
 import { usePatientHistory } from '@/hooks/use-patient';
 import { useFullHistory } from '@/hooks/use-history';
 import { EntryCard } from '@/components/EntryCard';
@@ -16,7 +18,6 @@ import {
   AlertCircle,
   Loader2,
   Shield,
-  ArrowRight,
   RefreshCw,
 } from 'lucide-react';
 
@@ -24,6 +25,7 @@ export function DoctorDashboard() {
   const account = useActiveAccount();
   const [searchAddr, setSearchAddr] = useState('');
   const [submittedAddr, setSubmittedAddr] = useState('');
+  const requestAccess = useMutation({ mutationFn: accessRequestApi.create });
 
   const { data: historyLookup, isLoading: lookupLoading, error: lookupError } = usePatientHistory(submittedAddr || undefined);
   const { data: historyData, isLoading: historyLoading, error: historyError, refetch: refetchHistory } = useFullHistory(historyLookup?.historyId);
@@ -95,13 +97,25 @@ export function DoctorDashboard() {
             <div className="card border-amber-200 bg-amber-50">
               <div className="flex items-center gap-3">
                 <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-amber-800">No History Found</p>
                   <p className="text-xs text-amber-600 mt-0.5">
                     {error instanceof Error ? error.message : 'This patient may not have created a history, or you may not have access.'}
                   </p>
                 </div>
+                <button
+                  onClick={() => requestAccess.mutate(submittedAddr)}
+                  disabled={requestAccess.isPending}
+                  className="btn-secondary shrink-0 text-xs"
+                >
+                  {requestAccess.isPending ? 'Sending…' : requestAccess.isSuccess ? 'Request sent' : 'Request access'}
+                </button>
               </div>
+              {requestAccess.isError && (
+                <p className="mt-2 text-xs text-red-600">
+                  {requestAccess.error instanceof Error ? requestAccess.error.message : 'Unable to send request'}
+                </p>
+              )}
             </div>
           )}
 
@@ -164,8 +178,19 @@ export function DoctorDashboard() {
                       The patient can grant you access via their Consent Management dashboard. Share your wallet address with them.
                     </p>
                   </div>
-                  <ArrowRight className="h-5 w-5 text-navy-400 shrink-0" />
+                  <button
+                    onClick={() => requestAccess.mutate(submittedAddr)}
+                    disabled={requestAccess.isPending}
+                    className="btn-secondary shrink-0 text-xs"
+                  >
+                    {requestAccess.isPending ? 'Sending…' : requestAccess.isSuccess ? 'Request sent' : 'Request access'}
+                  </button>
                 </div>
+                {requestAccess.isError && (
+                  <p className="mt-2 text-xs text-red-600">
+                    {requestAccess.error instanceof Error ? requestAccess.error.message : 'Unable to send request'}
+                  </p>
+                )}
               </div>
             </>
           )}

@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { useActiveAccount } from '@/lib/auth';
 import { usePatientHistory } from '@/hooks/use-patient';
 import { useAddEntry } from '@/hooks/use-history';
-import { documentApi } from '@/lib/api';
+import { accessRequestApi, documentApi } from '@/lib/api';
 import { StatusBadge } from '@/components/StatusBadge';
 import { WalletAddress } from '@/components/WalletAddress';
 import { CardSkeleton } from '@/components/LoadingSkeleton';
@@ -43,6 +44,7 @@ export function LabTechDashboard() {
 
   const { data: historyLookup, isLoading: lookupLoading } = usePatientHistory(submittedAddr || undefined);
   const addEntryMutation = useAddEntry();
+  const requestAccess = useMutation({ mutationFn: accessRequestApi.create });
   const historyId = historyLookup?.historyId;
 
   const handleSearch = (e: React.FormEvent) => {
@@ -216,8 +218,20 @@ export function LabTechDashboard() {
         <div className="card border-amber-200 bg-amber-50">
           <div className="flex items-center gap-3">
             <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
-            <p className="text-sm text-amber-800">No medical history found for this patient.</p>
+            <p className="flex-1 text-sm text-amber-800">No medical history found or access has not been granted.</p>
+            <button
+              onClick={() => requestAccess.mutate(submittedAddr)}
+              disabled={requestAccess.isPending}
+              className="btn-secondary shrink-0 text-xs"
+            >
+              {requestAccess.isPending ? 'Sending…' : requestAccess.isSuccess ? 'Request sent' : 'Request access'}
+            </button>
           </div>
+          {requestAccess.isError && (
+            <p className="mt-2 text-xs text-red-600">
+              {requestAccess.error instanceof Error ? requestAccess.error.message : 'Unable to send request'}
+            </p>
+          )}
         </div>
       )}
 

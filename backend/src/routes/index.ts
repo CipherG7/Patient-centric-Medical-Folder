@@ -12,6 +12,8 @@ import auditRoutes from './audit';
 import documentRoutes from './documents';
 import authRoutes from './auth';
 import securityAuditRoutes from './security-audit';
+import notificationRoutes from './notifications';
+import accessRequestRoutes from './access-requests';
 
 const router = Router();
 
@@ -33,6 +35,7 @@ router.use('/history', historyRoutes);
 router.use('/history', accessRoutes);
 router.use('/history', auditRoutes);
 router.use('/documents', documentRoutes);
+router.use('/notifications', notificationRoutes);
+router.use('/access-requests', accessRequestRoutes);
 
 export default router;
-

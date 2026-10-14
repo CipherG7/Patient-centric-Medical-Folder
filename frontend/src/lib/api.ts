@@ -206,6 +206,32 @@ export const accessApi = {
     request<{ success: boolean; digest: string }>('POST', `/history/${historyId}/revoke-access`, { granteeAddr }),
 };
 
+export interface NotificationItem {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  metadata: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string;
+}
+
+export const notificationApi = {
+  list: () =>
+    request<{ notifications: NotificationItem[]; unread: number }>('GET', '/notifications'),
+  markRead: (id: string) => request<void>('PATCH', `/notifications/${id}/read`),
+};
+
+export const accessRequestApi = {
+  create: (patientAddr: string) =>
+    request<{ success: boolean; requestId: string }>('POST', '/access-requests', { patientAddr }),
+  incoming: () =>
+    request<{ requests: Array<{ id: string; requester_addr: string; status: string; created_at: string }> }>(
+      'GET',
+      '/access-requests/incoming'
+    ),
+};
+
 // ─── Audit endpoints ──────────────────────────────────────
 
 export interface AuditResponse {

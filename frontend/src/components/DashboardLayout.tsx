@@ -6,6 +6,7 @@ import type { UserRole } from '@/types';
 import { Menu, X, Wallet } from 'lucide-react';
 import { ConnectButton } from '@mysten/dapp-kit';
 import { useActiveAccount } from '@/lib/auth';
+import { NotificationBell } from './NotificationBell';
 
 interface DashboardLayoutProps {
   role: UserRole;
@@ -58,6 +59,7 @@ export function DashboardLayout({ role }: DashboardLayoutProps) {
 
           {/* Wallet connection */}
           <div className="flex items-center gap-2">
+            <NotificationBell />
             <ConnectButton className="!btn-outline !text-xs" />
           </div>
         </header>
