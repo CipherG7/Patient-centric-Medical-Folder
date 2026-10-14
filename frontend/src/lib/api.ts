@@ -71,6 +71,8 @@ export const authApi = {
       '/auth/zklogin/challenge',
       data
     ),
+  zkLoginAddress: (idToken: string) =>
+    request<{ address: string }>('POST', '/auth/zklogin/address', { idToken }),
   zkLoginVerify: (challengeId: string, idToken: string, role: string, acceptedTerms: boolean) =>
     request<AuthSessionResponse>(
       'POST',

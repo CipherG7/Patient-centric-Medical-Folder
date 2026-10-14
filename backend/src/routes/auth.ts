@@ -38,6 +38,10 @@ const ZkLoginVerifySchema = z.object({
   acceptedTerms: z.boolean(),
 });
 
+const ZkLoginAddressSchema = z.object({
+  idToken: z.string().min(1),
+});
+
 const googleAuth = new OAuth2Client();
 
 function getZkLoginSalt(issuer: string, audience: string, subject: string): string {
@@ -169,6 +173,27 @@ router.post('/zklogin/challenge', validate({ body: ZkLoginChallengeSchema }), as
       [challengeId, nonce, expiresAt]
     );
     res.json({ challengeId, nonce, maxEpoch, expiresAt: expiresAt.toISOString() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/zklogin/address', validate({ body: ZkLoginAddressSchema }), async (req, res, next) => {
+  try {
+    if (!config.GOOGLE_CLIENT_ID || !config.ZKLOGIN_SALT_SECRET) {
+      throw new AppError('Google zkLogin is not configured on this server', 503);
+    }
+    const ticket = await googleAuth.verifyIdToken({
+      idToken: req.body.idToken,
+      audience: config.GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    if (!payload?.sub || !payload.iss || !payload.aud) {
+      throw new AppError('Google ID token is missing required claims', 401);
+    }
+    const audience = Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
+    const salt = getZkLoginSalt(payload.iss, audience, payload.sub);
+    res.json({ address: jwtToAddress(req.body.idToken, salt, false).toLowerCase() });
   } catch (err) {
     next(err);
   }

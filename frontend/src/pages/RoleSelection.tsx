@@ -3,9 +3,10 @@ import { isPlatformAdminAddress, useActiveAccount } from '@/lib/auth';
 import { useCurrentAccount, useSignPersonalMessage } from '@mysten/dapp-kit';
 import { authApi } from '@/lib/api';
 import { roleLabel } from '@/lib/utils';
+import { WalletAddress } from '@/components/WalletAddress';
 import type { UserRole } from '@/types';
 import { Shield, User, Stethoscope, FlaskConical, Building2, ChevronRight, ArrowLeft } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const roles: { value: UserRole; icon: React.ReactNode; description: string }[] = [
   { value: 'patient', icon: <User className="h-5 w-5" />, description: 'Access your medical history, manage consent, view audit logs' },
@@ -20,6 +21,7 @@ export function RoleSelection() {
   const [authError, setAuthError] = useState('');
   const [authenticating, setAuthenticating] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [googleAddress, setGoogleAddress] = useState('');
   const navigate = useNavigate();
   const account = useActiveAccount();
   const walletAccount = useCurrentAccount();
@@ -30,6 +32,14 @@ export function RoleSelection() {
   const availableRoles = isPlatformAdminAddress(account?.address)
     ? [...roles, { value: 'platform_admin' as const, icon: <Shield className="h-5 w-5" />, description: 'Verify institutions, manage platform-wide settings' }]
     : roles;
+  useEffect(() => {
+    if (!pendingGoogleToken || account) return;
+    void authApi.zkLoginAddress(pendingGoogleToken)
+      .then((response) => setGoogleAddress(response.address))
+      .catch(() => setGoogleAddress(''));
+  }, [account, pendingGoogleToken]);
+
+  const address = account?.address || googleAddress;
   if (!account && !pendingGoogleToken) return <Navigate to="/login" replace />;
 
   const handleContinue = async () => {
@@ -120,6 +130,20 @@ export function RoleSelection() {
           </button>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Choose your role</h1>
           <p className="mt-2 text-sm text-slate-500">Choose the workspace that best describes how you use HealthVault.</p>
+          {address ? (
+            <div className="mt-5 flex items-center justify-between gap-4 rounded-xl border border-teal-200 bg-teal-50/70 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-teal-800">
+                Your wallet address
+              </p>
+              <div className="shrink-0 rounded-lg border border-teal-200 bg-white px-2 py-1.5 text-xs text-slate-700">
+                <WalletAddress address={address} chars={8} />
+              </div>
+            </div>
+          ) : isGoogleLogin ? (
+            <p className="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+              Preparing your account address. It will appear here shortly.
+            </p>
+          ) : null}
           <div className="mt-6 grid gap-2 sm:grid-cols-2">
             {availableRoles.map((role) => (
               <button
