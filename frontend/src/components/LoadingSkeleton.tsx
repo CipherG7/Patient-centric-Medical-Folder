@@ -7,7 +7,7 @@ interface SkeletonProps {
 export function Skeleton({ className }: SkeletonProps) {
   return (
     <div
-      className={cn('animate-pulse rounded bg-gray-200', className)}
+      className={cn('animate-pulse rounded-lg bg-slate-200/80', className)}
       role="status"
       aria-label="Loading"
     />
@@ -32,7 +32,7 @@ export function CardSkeleton() {
 
 export function PageSkeleton() {
   return (
-    <div className="space-y-6 p-6" aria-busy="true">
+    <div className="page-shell space-y-6" aria-busy="true">
       <Skeleton className="h-8 w-48" />
       <div className="grid gap-4">
         {Array.from({ length: 3 }).map((_, i) => (
@@ -57,4 +57,3 @@ export function TableSkeleton({ rows = 5 }: { rows?: number }) {
     </div>
   );
 }
-

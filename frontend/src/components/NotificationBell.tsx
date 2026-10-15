@@ -12,7 +12,7 @@ export function NotificationBell() {
     <div className="relative">
       <button
         onClick={() => setOpen((value) => !value)}
-        className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+        className="relative rounded-xl p-2.5 text-amber-600 transition-colors hover:bg-amber-600/10 hover:text-amber-800"
         aria-label="Notifications"
       >
         <Bell className="h-5 w-5" />
@@ -25,7 +25,7 @@ export function NotificationBell() {
 
       {open && (
         <div className="absolute right-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
-          <div className="flex items-center justify-between px-2 py-2">
+          <div className="flex items-center justify-between border-b border-slate-100 px-2 py-3">
             <h2 className="text-sm font-semibold text-slate-800">Notifications</h2>
             {isLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
           </div>

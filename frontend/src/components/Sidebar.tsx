@@ -54,9 +54,9 @@ export function Sidebar({ role, onClose }: SidebarProps) {
   };
 
   return (
-    <aside className="flex h-full flex-col bg-[#102f38] text-white border-r border-white/10">
+    <aside className="flex h-full flex-col border-r border-white/10 bg-[#102f38] text-white shadow-[8px_0_30px_rgba(15,35,45,0.08)]">
       {/* Logo / Brand */}
-      <div className="flex items-center gap-3 px-5 py-6 border-b border-white/10">
+      <div className="flex items-center gap-3 border-b border-white/10 px-5 py-6">
         <img src="/Medichain.svg" alt="MediChain logo" className="h-9 w-9 object-contain" />
         <div className="leading-tight">
           <span className="text-sm font-bold text-white tracking-tight">MediChain</span>
@@ -65,19 +65,20 @@ export function Sidebar({ role, onClose }: SidebarProps) {
 
       </div>
       {/* Navigation */}
-      <div className="px-5 pt-6 pb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-teal-200/50">Workspace</div>
-      <nav className="flex-1 overflow-y-auto px-3 pb-4 space-y-1">
+      <div className="px-5 pb-2 pt-6 text-[10px] font-bold uppercase tracking-[0.18em] text-teal-200/50">Workspace</div>
+      <nav className="app-scrollbar flex-1 space-y-1 overflow-y-auto px-3 pb-4">
         {filteredItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
+            end={item.path === '/dashboard'}
             onClick={onClose}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors duration-150',
+                'flex items-center gap-3 rounded-xl border-l-2 px-3 py-2.5 text-sm font-medium transition-all duration-150',
                 isActive
-                  ? 'bg-teal-400 text-[#102f38] border border-teal-300 shadow-lg shadow-teal-950/10'
-                  : 'text-teal-50/70 hover:bg-white/10 hover:text-white border border-transparent'
+                  ? 'border-teal-200 bg-teal-400 text-[#102f38] shadow-lg shadow-teal-950/10'
+                  : 'border-transparent text-teal-50/70 hover:bg-white/10 hover:text-white'
               )
             }
           >
@@ -88,24 +89,24 @@ export function Sidebar({ role, onClose }: SidebarProps) {
       </nav>
 
       {/* User info footer */}
-      <div className="border-t border-white/10 p-4 space-y-3">
+      <div className="space-y-3 border-t border-white/10 p-4">
         {account ? (
           <>
-            <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-400 text-xs font-bold text-[#102f38]">
-              {account.address.slice(2, 4).toUpperCase()}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-white truncate">
-                {account.address.slice(0, 6)}&hellip;{account.address.slice(-4)}
-              </p>
-              <p className="text-[10px] text-teal-200/60 capitalize">{role.replace('_', ' ')}</p>
+            <div className="flex items-center gap-3 rounded-xl bg-white/5 p-2">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-400 text-xs font-bold text-[#102f38]">
+                {account.address.slice(2, 4).toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium text-white">
+                  {account.address.slice(0, 6)}&hellip;{account.address.slice(-4)}
+                </p>
+                <p className="text-[10px] capitalize text-teal-200/60">{role.replace('_', ' ')}</p>
               </div>
             </div>
             {/* Switch Role button */}
             <button
               onClick={handleSwitchRole}
-              className="flex w-full items-center gap-3 px-3 py-2 text-sm font-medium text-teal-100/70 hover:bg-white/10 hover:text-white rounded-lg transition-colors duration-150 border border-transparent"
+              className="flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2 text-sm font-medium text-teal-100/70 transition-colors duration-150 hover:bg-white/10 hover:text-white"
             >
               <LogOut className="h-4 w-4 shrink-0" />
               <span>Switch Role</span>

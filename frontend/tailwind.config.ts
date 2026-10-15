@@ -40,6 +40,10 @@ const config: Config = {
         DEFAULT: '8px',
         card: '12px',
       },
+      boxShadow: {
+        soft: '0 8px 30px rgba(15, 35, 45, 0.05)',
+        lift: '0 14px 35px rgba(15, 35, 45, 0.08)',
+      },
       borderWidth: {
         hairline: '0.5px',
       },
@@ -49,4 +53,3 @@ const config: Config = {
 };
 
 export default config;
-
