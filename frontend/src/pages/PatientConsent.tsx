@@ -1,5 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import { useMutation } from '@tanstack/react-query';
 import { useActiveAccount } from '@/lib/auth';
+import { accessRequestApi } from '@/lib/api';
 import { usePatientHistory } from '@/hooks/use-patient';
 import { useFullHistory } from '@/hooks/use-history';
 import { useGrantFullAccess, useGrantPartialAccess, useRevokeAccess } from '@/hooks/use-access';
@@ -24,6 +27,7 @@ import {
 
 export function PatientConsent() {
   const account = useActiveAccount();
+  const location = useLocation();
   const patientAddr = account?.address || '';
 
   const { data: historyLookup, isLoading: lookupLoading } = usePatientHistory(patientAddr);
@@ -32,6 +36,7 @@ export function PatientConsent() {
   const grantFullMutation = useGrantFullAccess();
   const grantPartialMutation = useGrantPartialAccess();
   const revokeMutation = useRevokeAccess();
+  const declineMutation = useMutation({ mutationFn: accessRequestApi.decline });
 
   const [showGrantForm, setShowGrantForm] = useState(false);
   const [granteeAddr, setGranteeAddr] = useState('');
@@ -39,10 +44,21 @@ export function PatientConsent() {
   const [selectedEntryIds, setSelectedEntryIds] = useState<number[]>([]);
   const [expiryDate, setExpiryDate] = useState('');
   const [formError, setFormError] = useState('');
+  const [requestId, setRequestId] = useState<string | null>(null);
 
   const historyId = historyLookup?.historyId;
   const entries = historyData?.entries || [];
   const isLoading = lookupLoading || historyLoading;
+
+  useEffect(() => {
+    const state = location.state as { requesterAddr?: string; requestId?: string } | null;
+    if (state?.requesterAddr && state.requestId) {
+      setGranteeAddr(state.requesterAddr);
+      setRequestId(state.requestId);
+      setShowGrantForm(true);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [location.state]);
 
   // For demo purposes, simulate active grants from on-chain data
   // In production, these would come from the PermissionStore on-chain
@@ -56,6 +72,7 @@ export function PatientConsent() {
     setSelectedEntryIds([]);
     setExpiryDate('');
     setFormError('');
+    setRequestId(null);
     setShowGrantForm(false);
   };
 
@@ -103,6 +120,16 @@ export function PatientConsent() {
       setActiveGrants((prev) => prev.filter((g) => g.granteeAddr !== addr));
     } catch (err) {
       console.error('Revoke failed:', err);
+    }
+  };
+
+  const handleDecline = async () => {
+    if (!requestId) return;
+    try {
+      await declineMutation.mutateAsync(requestId);
+      resetForm();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Unable to decline request');
     }
   };
 
@@ -242,23 +269,34 @@ export function PatientConsent() {
             </div>
           )}
 
-          <button
-            onClick={handleGrant}
+          <div className="flex gap-2">
+            <button
+              onClick={handleGrant}
             disabled={grantFullMutation.isPending || grantPartialMutation.isPending}
-            className="btn-primary w-full"
-          >
-            {grantFullMutation.isPending || grantPartialMutation.isPending ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Processing…
-              </>
-            ) : (
-              <>
-                <UserPlus className="h-4 w-4" />
-                Grant Access
-              </>
+            className="btn-primary flex-1"
+            >
+              {grantFullMutation.isPending || grantPartialMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Processing…
+                </>
+              ) : (
+                <>
+                  <UserPlus className="h-4 w-4" />
+                  Grant Access
+                </>
+              )}
+            </button>
+            {requestId && (
+              <button
+                onClick={() => void handleDecline()}
+                disabled={declineMutation.isPending}
+                className="btn-ghost text-red-600 hover:bg-red-50"
+              >
+                {declineMutation.isPending ? 'Declining…' : 'Deny request'}
+              </button>
             )}
-          </button>
+          </div>
         </div>
       )}
 

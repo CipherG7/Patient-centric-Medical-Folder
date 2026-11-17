@@ -12,7 +12,7 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    allowedHosts: ['192.168.100.176.nip.io'],
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://localhost:4000',

@@ -6,6 +6,8 @@ export function useNotifications() {
     queryKey: ['notifications'],
     queryFn: notificationApi.list,
     refetchInterval: 30_000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
 }
 

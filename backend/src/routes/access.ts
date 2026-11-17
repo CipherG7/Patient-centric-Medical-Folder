@@ -48,6 +48,19 @@ async function createAccessNotification(input: {
   );
 }
 
+async function resolveAccessRequest(
+  patientAddr: string,
+  requesterAddr: string,
+  status: 'approved' | 'declined'
+): Promise<void> {
+  await getDb().query(
+    `UPDATE access_requests
+     SET status = $1, resolved_at = now()
+     WHERE patient_addr = $2 AND requester_addr = $3 AND status = 'pending'`,
+    [status, patientAddr.toLowerCase(), requesterAddr.toLowerCase()]
+  );
+}
+
 async function requireHistoryOwner(historyId: string, address: string): Promise<void> {
   const history = await getSuiObject(historyId);
   const owner = history.data?.content?.fields?.owner;
@@ -108,6 +121,7 @@ router.post(
       );
 
       const result = await executeTx(client, tx, signer);
+      await resolveAccessRequest(req.user!.address, granteeAddr, 'approved');
 
       await recordOffchainAuditEvent({
         action: 'access_grant_details',
@@ -170,6 +184,7 @@ router.post(
       );
 
       const result = await executeTx(client, tx, signer);
+      await resolveAccessRequest(req.user!.address, granteeAddr, 'approved');
 
       await recordOffchainAuditEvent({
         action: 'access_grant_details',

@@ -7,6 +7,7 @@ import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
 const AddressSchema = z.string().regex(/^0x[0-9a-fA-F]{40,64}$/, 'Invalid Sui address');
+const RequestIdParamSchema = z.object({ id: z.string().uuid() });
 
 router.post(
   '/',
@@ -35,9 +36,13 @@ router.post(
          VALUES ($1, $2, 'access_request', 'New access request', $3, $4)`,
         [
           patientAddr,
-          req.user!.address,
+          req.user!.address.toLowerCase(),
           `${req.user!.role.replace('_', ' ')} ${req.user!.address.slice(0, 6)}…${req.user!.address.slice(-4)} requested access to your medical history.`,
-          JSON.stringify({ requestId: result.rows[0].id, requesterAddr: req.user!.address, role: req.user!.role }),
+          JSON.stringify({
+            requestId: result.rows[0].id,
+            requesterAddr: req.user!.address.toLowerCase(),
+            role: req.user!.role,
+          }),
         ]
       );
       res.status(201).json({ success: true, requestId: result.rows[0].id });
@@ -62,5 +67,28 @@ router.get('/incoming', apiKeyAuth, async (req, res, next) => {
     next(err);
   }
 });
+
+router.patch(
+  '/:id/decline',
+  apiKeyAuth,
+  validate({ params: RequestIdParamSchema }),
+  async (req, res, next) => {
+    try {
+      const result = await getDb().query(
+        `UPDATE access_requests
+         SET status = 'declined', resolved_at = now()
+         WHERE id = $1 AND patient_addr = $2 AND status = 'pending'
+         RETURNING id`,
+        [req.params.id, req.user!.address]
+      );
+      if (result.rows.length === 0) {
+        throw new AppError('Access request is no longer pending', 409);
+      }
+      res.json({ success: true });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 export default router;

@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Bell, Check, Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useMarkNotificationRead, useNotifications } from '@/hooks/use-notifications';
 import { formatTimestamp } from '@/lib/utils';
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
-  const { data, isLoading } = useNotifications();
+  const navigate = useNavigate();
+  const { data, isLoading, error } = useNotifications();
   const markRead = useMarkNotificationRead();
 
   return (
@@ -29,15 +31,30 @@ export function NotificationBell() {
             <h2 className="text-sm font-semibold text-slate-800">Notifications</h2>
             {isLoading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
           </div>
-          {!isLoading && !data?.notifications.length && (
+          {error && (
+            <p className="px-2 py-5 text-center text-xs text-red-600">
+              Unable to load notifications. Please try again.
+            </p>
+          )}
+          {!isLoading && !error && !data?.notifications.length && (
             <p className="px-2 py-5 text-center text-xs text-slate-500">You are all caught up.</p>
           )}
           <div className="max-h-96 overflow-y-auto">
-            {data?.notifications.map((notification) => (
+            {!error && data?.notifications.map((notification) => (
               <button
                 key={notification.id}
                 onClick={() => {
                   if (!notification.read_at) markRead.mutate(notification.id);
+                  if (notification.type === 'access_request') {
+                    const requesterAddr = notification.metadata.requesterAddr;
+                    const requestId = notification.metadata.requestId;
+                    if (typeof requesterAddr === 'string' && typeof requestId === 'string') {
+                      setOpen(false);
+                      navigate('/dashboard/consent', {
+                        state: { requesterAddr, requestId },
+                      });
+                    }
+                  }
                 }}
                 className={`w-full rounded-lg p-3 text-left transition-colors hover:bg-slate-50 ${
                   notification.read_at ? '' : 'bg-teal-50/60'

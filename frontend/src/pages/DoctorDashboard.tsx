@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useActiveAccount } from '@/lib/auth';
 import { useMutation } from '@tanstack/react-query';
-import { accessRequestApi } from '@/lib/api';
+import { accessRequestApi, documentApi } from '@/lib/api';
 import { usePatientHistory } from '@/hooks/use-patient';
 import { useFullHistory } from '@/hooks/use-history';
 import { EntryCard } from '@/components/EntryCard';
@@ -38,10 +38,21 @@ export function DoctorDashboard() {
   const isLoading = lookupLoading || historyLoading;
   const error = lookupError || historyError;
   const historyId = historyLookup?.historyId;
+  const accessDenied =
+    historyError instanceof Error && historyError.message.toLowerCase().includes('access denied');
 
   const handleVerifyEntry = async (entry: HistoryEntry): Promise<boolean> => {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    return !!entry.contentHash && entry.contentHash.length > 0;
+    if (!historyId || entry.id === undefined || !entry.offChainRef || !entry.contentHash) {
+      throw new Error('Document details are unavailable for verification');
+    }
+    return documentApi.verify(entry.offChainRef, historyId, entry.id, entry.contentHash);
+  };
+
+  const handleViewDocument = async (entry: HistoryEntry): Promise<Blob> => {
+    if (!historyId || entry.id === undefined || !entry.offChainRef) {
+      throw new Error('Document details are unavailable');
+    }
+    return documentApi.download(entry.offChainRef, historyId, entry.id, entry.contentHash || undefined);
   };
 
   return (
@@ -98,18 +109,17 @@ export function DoctorDashboard() {
               <div className="flex items-center gap-3">
                 <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-amber-800">No History Found</p>
+                  <p className="text-sm font-medium text-amber-800">
+                    {accessDenied ? 'Access required' : 'No History Found'}
+                  </p>
                   <p className="text-xs text-amber-600 mt-0.5">
-                    {error instanceof Error ? error.message : 'This patient may not have created a history, or you may not have access.'}
+                    {accessDenied
+                      ? 'The patient has not granted you access to these medical records.'
+                      : error instanceof Error
+                        ? error.message
+                        : 'This patient may not have created a history, or you may not have access.'}
                   </p>
                 </div>
-                <button
-                  onClick={() => requestAccess.mutate(submittedAddr)}
-                  disabled={requestAccess.isPending}
-                  className="btn-secondary shrink-0 text-xs"
-                >
-                  {requestAccess.isPending ? 'Sending…' : requestAccess.isSuccess ? 'Request sent' : 'Request access'}
-                </button>
               </div>
               {requestAccess.isError && (
                 <p className="mt-2 text-xs text-red-600">
@@ -135,7 +145,10 @@ export function DoctorDashboard() {
                     {historyData && <span className="ml-2">· {historyData.entryCount} entries</span>}
                   </p>
                 </div>
-                <StatusBadge variant="granted" label="Access Granted" />
+                <StatusBadge
+                  variant={accessDenied ? 'pending' : 'granted'}
+                  label={accessDenied ? 'Access Required' : 'Access Granted'}
+                />
               </div>
 
               {/* No entries */}
@@ -159,10 +172,12 @@ export function DoctorDashboard() {
 
                   {historyData.entries.map((entry, idx) => (
                     <EntryCard
-                      key={idx}
+                      key={entry.id ?? idx}
                       entry={entry}
-                      entryId={idx}
+                      entryId={entry.id ?? idx}
+                      index={idx}
                       onVerify={handleVerifyEntry}
+                      onViewDocument={handleViewDocument}
                     />
                   ))}
                 </div>

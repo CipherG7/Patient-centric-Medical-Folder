@@ -448,6 +448,7 @@ export async function buildReadFullHistoryPTB(
   viewerAddr: string
 ): Promise<Transaction> {
   const tx = new Transaction();
+  tx.setSender(viewerAddr);
 
   const historyRef = await fetchSharedObjectRef(historyId, false);
   const permissionStoreRef = await fetchSharedObjectRef(sharedObjects.permissionStore, false);
@@ -473,9 +474,11 @@ export async function buildReadFullHistoryPTB(
 export async function buildReadEntryPTB(
   sharedObjects: SharedObjectIds,
   historyId: string,
-  entryId: number
+  entryId: number,
+  viewerAddr?: string
 ): Promise<Transaction> {
   const tx = new Transaction();
+  if (viewerAddr) tx.setSender(viewerAddr);
 
   const historyRef = await fetchSharedObjectRef(historyId, false);
   const permissionStoreRef = await fetchSharedObjectRef(sharedObjects.permissionStore, false);

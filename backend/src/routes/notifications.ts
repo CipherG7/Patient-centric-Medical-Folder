@@ -11,7 +11,7 @@ router.get('/', apiKeyAuth, async (req, res, next) => {
     const { rows } = await getDb().query(
       `SELECT id, type, title, message, metadata, read_at, created_at
        FROM notifications
-       WHERE recipient_addr = $1
+       WHERE LOWER(recipient_addr) = LOWER($1)
        ORDER BY created_at DESC
        LIMIT 50`,
       [req.user!.address]
@@ -31,7 +31,7 @@ router.patch(
     try {
       await getDb().query(
         `UPDATE notifications SET read_at = now()
-         WHERE id = $1 AND recipient_addr = $2`,
+         WHERE id = $1 AND LOWER(recipient_addr) = LOWER($2)`,
         [req.params.id, req.user!.address]
       );
       res.status(204).send();

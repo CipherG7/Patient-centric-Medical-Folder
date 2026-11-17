@@ -176,11 +176,21 @@ router.get(
       const sharedIds = getSharedObjectIds();
 
       // Use dryRun (devInspectTransactionBlock) for read-only queries
-      const tx = buildReadFullHistoryPTB(
+      const tx = await buildReadFullHistoryPTB(
         sharedIds,
         historyId,
-        req.user?.address || '0x0'
+        req.user!.address
       );
+      const simulation = await client.simulateTransaction({
+        transaction: tx,
+        include: { effects: true },
+      });
+      if (simulation.$kind === 'FailedTransaction') {
+        throw new AppError(
+          'Access denied: the patient has not granted you access to this medical history',
+          403
+        );
+      }
 
       // Read the on-chain MedicalHistory object directly for entry data
       const historyObj = await getSuiObject(historyId);
@@ -289,6 +299,22 @@ router.get(
       const { historyId, entryId } = req.params;
       const client = getSuiClient();
       const sharedIds = getSharedObjectIds();
+      const readTx = await buildReadEntryPTB(
+        sharedIds,
+        historyId,
+        Number(entryId),
+        req.user!.address
+      );
+      const simulation = await client.simulateTransaction({
+        transaction: readTx,
+        include: { effects: true },
+      });
+      if (simulation.$kind === 'FailedTransaction') {
+        throw new AppError(
+          'Access denied: the patient has not granted you access to this entry',
+          403
+        );
+      }
 
       // Read the history object and find the specific entry
       const historyObj = await getSuiObject(historyId);

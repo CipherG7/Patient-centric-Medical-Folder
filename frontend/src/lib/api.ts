@@ -227,6 +227,8 @@ export const notificationApi = {
 export const accessRequestApi = {
   create: (patientAddr: string) =>
     request<{ success: boolean; requestId: string }>('POST', '/access-requests', { patientAddr }),
+  decline: (requestId: string) =>
+    request<{ success: boolean }>('PATCH', `/access-requests/${requestId}/decline`),
   incoming: () =>
     request<{ requests: Array<{ id: string; requester_addr: string; status: string; created_at: string }> }>(
       'GET',
