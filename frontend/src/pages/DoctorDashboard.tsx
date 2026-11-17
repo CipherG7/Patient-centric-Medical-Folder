@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useActiveAccount } from '@/lib/auth';
 import { useMutation } from '@tanstack/react-query';
 import { accessRequestApi, documentApi } from '@/lib/api';
@@ -23,9 +24,19 @@ import {
 
 export function DoctorDashboard() {
   const account = useActiveAccount();
+  const location = useLocation();
   const [searchAddr, setSearchAddr] = useState('');
   const [submittedAddr, setSubmittedAddr] = useState('');
   const requestAccess = useMutation({ mutationFn: accessRequestApi.create });
+
+  useEffect(() => {
+    const state = location.state as { patientAddr?: string } | null;
+    if (state?.patientAddr) {
+      setSearchAddr(state.patientAddr);
+      setSubmittedAddr(state.patientAddr);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [location.state]);
 
   const { data: historyLookup, isLoading: lookupLoading, error: lookupError } = usePatientHistory(submittedAddr || undefined);
   const { data: historyData, isLoading: historyLoading, error: historyError, refetch: refetchHistory } = useFullHistory(historyLookup?.historyId);

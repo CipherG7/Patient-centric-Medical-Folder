@@ -54,6 +54,17 @@ export function NotificationBell() {
                         state: { requesterAddr, requestId },
                       });
                     }
+                  } else if (notification.type === 'access_granted') {
+                    const historyId = notification.metadata.historyId;
+                    if (typeof historyId === 'string' && notification.actor_addr) {
+                      setOpen(false);
+                      navigate('/dashboard/search', {
+                        state: {
+                          patientAddr: notification.actor_addr,
+                          historyId,
+                        },
+                      });
+                    }
                   }
                 }}
                 className={`w-full rounded-lg p-3 text-left transition-colors hover:bg-slate-50 ${

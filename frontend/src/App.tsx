@@ -2,7 +2,6 @@ import { createContext, useContext } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createNetworkConfig, SuiClientProvider, WalletProvider } from '@mysten/dapp-kit';
-import { getFullnodeUrl } from '@mysten/sui/client';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Landing } from '@/pages/Landing';
 import { Welcome } from '@/pages/Welcome';
@@ -41,10 +40,10 @@ const queryClient = new QueryClient({
 
 // ─── Sui Network Config ───────────────────────────────────
 const { networkConfig } = createNetworkConfig({
-  testnet: { url: getFullnodeUrl('testnet') },
-  mainnet: { url: getFullnodeUrl('mainnet') },
-  devnet: { url: getFullnodeUrl('devnet') },
-  localnet: { url: getFullnodeUrl('localnet') },
+  testnet: { url: 'https://fullnode.testnet.sui.io:443' },
+  mainnet: { url: 'https://fullnode.mainnet.sui.io:443' },
+  devnet: { url: 'https://fullnode.devnet.sui.io:443' },
+  localnet: { url: 'http://127.0.0.1:9000' },
 });
 
 // ─── Role-aware dashboard wrapper (uses route state OR sessionStorage) ──

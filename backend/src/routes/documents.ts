@@ -18,7 +18,8 @@ import { z } from 'zod';
 import multer from 'multer';
 import { processDocument } from '../storage/document-service';
 import { downloadFromWalrus } from '../storage/walrus';
-import { getEntryKeyForUser } from '../encryption/key-manager';
+import { getEntryKeyForUser, wrapKeyForGrantee } from '../encryption/key-manager';
+import { getDemoAccess } from '../access/demo-access';
 import { decryptDocument, verifyContentHash } from '../encryption';
 import { getDb } from '../db';
 import { AppError } from '../middleware/errorHandler';
@@ -175,7 +176,16 @@ router.get(
       const userAddr = req.user.address;
 
       // 1. Check if user has a stored key (implies on-chain access was granted)
-      const entryKey = await getEntryKeyForUser(historyId, entryId, userAddr);
+      let entryKey = await getEntryKeyForUser(historyId, entryId, userAddr);
+      if (!entryKey) {
+        const demoAccess = await getDemoAccess(historyId, userAddr);
+        const entryAllowed = demoAccess?.scope === 'full'
+          || demoAccess?.entryIds.includes(entryId);
+        if (entryAllowed) {
+          await wrapKeyForGrantee(historyId, entryId, userAddr);
+          entryKey = await getEntryKeyForUser(historyId, entryId, userAddr);
+        }
+      }
       if (!entryKey) {
         throw new AppError(
           'Access denied: No decryption key available for this entry. ' +

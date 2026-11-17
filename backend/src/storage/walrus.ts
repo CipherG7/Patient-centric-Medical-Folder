@@ -64,11 +64,26 @@ export async function downloadFromWalrus(blobId: string): Promise<Buffer> {
   }
 
   const url = `${config.WALRUS_AGGREGATOR_URL.replace(/\/$/, '')}/v1/blobs/${encodeURIComponent(blobId)}`;
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!response.ok) {
-    throw new Error(`Walrus download failed: ${response.status} ${response.statusText}`);
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        headers: { accept: 'application/octet-stream' },
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (!response.ok) {
+        throw new Error(`Walrus download failed: ${response.status} ${response.statusText}`);
+      }
+      return Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+      }
+    }
   }
-  return Buffer.from(await response.arrayBuffer());
+
+  const reason = lastError instanceof Error ? `${lastError.name}: ${lastError.message}` : String(lastError);
+  throw new Error(`Walrus download failed after 3 attempts (${url}): ${reason}`);
 }

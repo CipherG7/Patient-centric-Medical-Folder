@@ -8,7 +8,12 @@ import { OAuth2Client } from 'google-auth-library';
 import { getDb } from '../db';
 import { validate } from '../middleware/validate';
 import { AppError } from '../middleware/errorHandler';
-import { DUAL_ROLE_ADDRESS, isPlatformAdminAddress } from '../middleware/auth';
+import {
+  DUAL_ROLE_ADDRESS,
+  apiKeyAuth,
+  assertInstitutionAccess,
+  isPlatformAdminAddress,
+} from '../middleware/auth';
 import { config } from '../config';
 import { getSuiClient } from '../sui/client';
 import { recordOffchainAuditEvent } from '../audit/offchain';
@@ -41,6 +46,13 @@ const ZkLoginVerifySchema = z.object({
 const ZkLoginAddressSchema = z.object({
   idToken: z.string().min(1),
 });
+const ZkLoginProofSchema = z.object({
+  jwt: z.string().min(1),
+  extendedEphemeralPublicKey: z.string().min(1),
+  maxEpoch: z.string().regex(/^\d+$/),
+  jwtRandomness: z.string().min(1),
+  salt: z.string().regex(/^\d+$/),
+});
 
 const googleAuth = new OAuth2Client();
 
@@ -49,7 +61,8 @@ function getZkLoginSalt(issuer: string, audience: string, subject: string): stri
     .createHmac('sha256', config.ZKLOGIN_SALT_SECRET)
     .update(`${issuer}|${audience}|${subject}`)
     .digest('hex');
-  return (BigInt(`0x${digest}`) & ((1n << 248n) - 1n)).toString(10);
+  // The configured hosted prover requires a 16-byte (128-bit) user salt.
+  return (BigInt(`0x${digest}`) & ((1n << 128n) - 1n)).toString(10);
 }
 
 async function createSession(
@@ -87,6 +100,7 @@ async function createSession(
   ) {
     throw new AppError('The selected role is not assigned to this wallet', 403);
   }
+  await assertInstitutionAccess(address, role);
   if (profile.rows.length > 0) {
     const hasCurrentAcceptance =
       profile.rows[0].terms_version === CURRENT_TERMS_VERSION &&
@@ -192,6 +206,9 @@ router.post('/zklogin/address', validate({ body: ZkLoginAddressSchema }), async 
       throw new AppError('Google ID token is missing required claims', 401);
     }
     const audience = Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
+    if (audience !== config.GOOGLE_CLIENT_ID) {
+      throw new AppError('Google ID token audience does not match the configured client', 401);
+    }
     const salt = getZkLoginSalt(payload.iss, audience, payload.sub);
     res.json({ address: jwtToAddress(req.body.idToken, salt, false).toLowerCase() });
   } catch (err) {
@@ -228,6 +245,9 @@ router.post('/zklogin/verify', validate({ body: ZkLoginVerifySchema }), async (r
 
     const db = getDb();
     const audience = Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
+    if (audience !== config.GOOGLE_CLIENT_ID) {
+      throw new AppError('Google ID token audience does not match the configured client', 401);
+    }
     const salt = getZkLoginSalt(payload.iss, audience, payload.sub);
     const address = jwtToAddress(idToken, salt, false).toLowerCase();
     attemptedAddress = address;
@@ -252,7 +272,7 @@ router.post('/zklogin/verify', validate({ body: ZkLoginVerifySchema }), async (r
       throw new AppError('zkLogin challenge is invalid, expired, or already used', 401);
     }
     const session = await createSession(address, role, acceptedTerms, req.requestId);
-    res.json(session);
+    res.json({ ...session, zkLoginSalt: salt });
   } catch (err) {
     await recordOffchainAuditEvent({
       action: 'authentication_failed',
@@ -263,6 +283,61 @@ router.post('/zklogin/verify', validate({ body: ZkLoginVerifySchema }), async (r
       metadata: { method: 'zklogin', reasonCode: err instanceof AppError ? err.statusCode : 500 },
       requestId: req.requestId,
     }).catch(() => undefined);
+    next(err);
+  }
+});
+
+router.post('/zklogin/proof', apiKeyAuth, validate({ body: ZkLoginProofSchema }), async (req, res, next) => {
+  try {
+    const claims = JSON.parse(
+      Buffer.from(req.body.jwt.split('.')[1], 'base64url').toString('utf8')
+    ) as { iss?: string; aud?: string | string[]; sub?: string };
+    if (!claims.iss || !claims.aud || !claims.sub) {
+      throw new AppError('zkLogin JWT is missing issuer, audience, or subject claims', 401);
+    }
+    const audience = Array.isArray(claims.aud) ? claims.aud[0] : claims.aud;
+    if (audience !== config.GOOGLE_CLIENT_ID) {
+      throw new AppError('Google ID token audience does not match the configured client', 401);
+    }
+    const canonicalSalt = getZkLoginSalt(claims.iss, audience, claims.sub);
+    if (canonicalSalt !== req.body.salt) {
+      throw new AppError('zkLogin session salt is stale. Sign in with Google again.', 401);
+    }
+    const derivedAddress = jwtToAddress(req.body.jwt, canonicalSalt, false).toLowerCase();
+    if (derivedAddress !== req.user!.address.toLowerCase()) {
+      throw new AppError('zkLogin session address does not match the authenticated session. Sign in with Google again.', 401);
+    }
+    const response = await fetch(config.ZKLOGIN_PROVER_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...req.body,
+        keyClaimName: 'sub',
+      }),
+    });
+    const responseText = await response.text();
+    let payload: unknown;
+    try {
+      payload = JSON.parse(responseText);
+    } catch {
+      payload = null;
+    }
+    if (!response.ok) {
+      const errorMessage =
+        typeof payload === 'object' && payload !== null && 'error' in payload &&
+        typeof payload.error === 'string'
+          ? payload.error
+          : typeof payload === 'object' && payload !== null && 'message' in payload &&
+              typeof payload.message === 'string'
+            ? payload.message
+            : responseText || `Prover returned HTTP ${response.status}`;
+      throw new AppError(
+        `zkLogin proof generation failed (${response.status}): ${errorMessage}`,
+        502
+      );
+    }
+    res.json(payload);
+  } catch (err) {
     next(err);
   }
 });
@@ -316,6 +391,7 @@ router.post('/verify', validate({ body: VerifySchema }), async (req, res, next) 
     ) {
       throw new AppError('The selected role is not assigned to this wallet', 403);
     }
+    await assertInstitutionAccess(address, role);
     const hasCurrentAcceptance =
       profile.rows.length > 0 &&
       profile.rows[0].terms_version === CURRENT_TERMS_VERSION &&

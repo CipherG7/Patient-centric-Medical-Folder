@@ -35,4 +35,7 @@ export function clearZkLoginSession() {
   sessionStorage.removeItem('zklogin_ephemeral_public');
   sessionStorage.removeItem('zklogin_pending_jwt');
   sessionStorage.removeItem('zklogin_pending_challenge_id');
+  for (const key of ['zklogin_salt', 'zklogin_jwt', 'zklogin_ephemeral_secret', 'zklogin_ephemeral_public', 'zklogin_randomness', 'zklogin_max_epoch']) {
+    localStorage.removeItem(key);
+  }
 }

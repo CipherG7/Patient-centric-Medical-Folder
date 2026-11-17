@@ -33,7 +33,9 @@ import {
   type TransactionArgument,
 } from '@mysten/sui/transactions';
 import { SuiGrpcClient } from '@mysten/sui/grpc';
+import { getAdminKeypair } from './client';
 import { bcs } from '@mysten/sui/bcs';
+import { fromBase64, toBase64 } from '@mysten/sui/utils';
 import { config } from '../config';
 
 // ─── Shared object IDs ─────────────────────────────────────
@@ -351,9 +353,11 @@ export async function buildGrantFullAccessPTB(
   sharedObjects: SharedObjectIds,
   historyId: string,
   granteeAddr: string,
-  expiryMs: number
+  expiryMs: number,
+  sender?: string
 ): Promise<Transaction> {
   const tx = new Transaction();
+  if (sender) tx.setSender(sender);
 
   const historyRef = await fetchSharedObjectRef(historyId, false);
   const permissionStoreRef = await fetchSharedObjectRef(sharedObjects.permissionStore, true);
@@ -383,9 +387,11 @@ export async function buildGrantPartialAccessPTB(
   historyId: string,
   granteeAddr: string,
   entryIds: number[],
-  expiryMs: number
+  expiryMs: number,
+  sender?: string
 ): Promise<Transaction> {
   const tx = new Transaction();
+  if (sender) tx.setSender(sender);
 
   const historyRef = await fetchSharedObjectRef(historyId, false);
   const permissionStoreRef = await fetchSharedObjectRef(sharedObjects.permissionStore, true);
@@ -414,9 +420,11 @@ export async function buildGrantPartialAccessPTB(
 export async function buildRevokeAccessPTB(
   sharedObjects: SharedObjectIds,
   historyId: string,
-  granteeAddr: string
+  granteeAddr: string,
+  sender?: string
 ): Promise<Transaction> {
   const tx = new Transaction();
+  if (sender) tx.setSender(sender);
 
   const historyRef = await fetchSharedObjectRef(historyId, false);
   const permissionStoreRef = await fetchSharedObjectRef(sharedObjects.permissionStore, true);
@@ -434,6 +442,65 @@ export async function buildRevokeAccessPTB(
   });
 
   return tx;
+}
+
+/**
+ * Prepare a transaction for a sponsored zkLogin execution. The zkLogin
+ * address remains the sender; the configured admin wallet only pays gas.
+ */
+export async function prepareSponsoredTransaction(tx: Transaction): Promise<string> {
+  const grpcClient = new SuiGrpcClient({
+    baseUrl: config.SUI_GRPC_URL,
+    network: config.SUI_NETWORK as any,
+  });
+  const sponsor = getAdminKeypair().toSuiAddress();
+  tx.setGasOwner(sponsor);
+  tx.setGasBudget(GAS_BUDGET);
+  tx.setGasPayment(await selectGasCoins(grpcClient, sponsor, GAS_BUDGET));
+  tx.setGasPrice(await getReferenceGasPrice());
+  const builtBytes = await tx.build({ client: grpcClient });
+  return toBase64(builtBytes);
+}
+
+export async function executeSponsoredTransaction(
+  transactionBytes: string,
+  zkLoginSignature: string,
+  zkLoginAddress?: string
+): Promise<{ digest: string }> {
+  const grpcClient = new SuiGrpcClient({
+    baseUrl: config.SUI_GRPC_URL,
+    network: config.SUI_NETWORK as any,
+  });
+  if (zkLoginAddress) {
+    const verification = await grpcClient.core.verifyZkLoginSignature({
+      bytes: transactionBytes,
+      signature: zkLoginSignature,
+      intentScope: 'TransactionData',
+      address: zkLoginAddress,
+    });
+    if (!verification.success) {
+      throw new Error(
+        `zkLogin signature verification failed before execution: ${
+          verification.errors.join('; ') || 'unknown verification error'
+        }`
+      );
+    }
+  }
+  const sponsorSignature = (await getAdminKeypair().signTransaction(fromBase64(transactionBytes))).signature;
+  const result = await grpcClient.executeTransaction({
+    transaction: fromBase64(transactionBytes),
+    signatures: [zkLoginSignature, sponsorSignature],
+    include: { effects: true },
+  });
+  if (result.$kind === 'FailedTransaction') {
+    throw new Error(
+      `Sponsored transaction failed on-chain: ${
+        result.FailedTransaction.status.error?.message ?? JSON.stringify(result.FailedTransaction.status)
+      }`
+    );
+  }
+  await grpcClient.waitForTransaction({ digest: result.Transaction.digest });
+  return { digest: result.Transaction.digest };
 }
 
 // ─── Read Functions (Move calls that return values) ────────

@@ -9,7 +9,7 @@ const router = Router();
 router.get('/', apiKeyAuth, async (req, res, next) => {
   try {
     const { rows } = await getDb().query(
-      `SELECT id, type, title, message, metadata, read_at, created_at
+      `SELECT id, type, title, message, metadata, actor_addr, read_at, created_at
        FROM notifications
        WHERE LOWER(recipient_addr) = LOWER($1)
        ORDER BY created_at DESC

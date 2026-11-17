@@ -58,6 +58,7 @@ export interface AuthSessionResponse {
   role: string;
   expiresAt: string;
   termsAccepted: boolean;
+  zkLoginSalt?: string;
 }
 
 export const authApi = {
@@ -79,6 +80,17 @@ export const authApi = {
       '/auth/zklogin/verify',
       { challengeId, idToken, role, acceptedTerms }
     ),
+  zkLoginProof: (data: {
+    jwt: string;
+    extendedEphemeralPublicKey: string;
+    maxEpoch: string;
+    jwtRandomness: string;
+    salt: string;
+  }) => request<{
+    proofPoints: { a: string[]; b: string[][]; c: string[] };
+    issBase64Details: { value: string; indexMod4: number };
+    headerBase64: string;
+  }>('POST', '/auth/zklogin/proof', data),
   logout: () => request<void>('POST', '/auth/logout'),
 };
 
@@ -198,6 +210,48 @@ export interface GrantResponse {
 }
 
 export const accessApi = {
+  prepareGrantFullAccess: (historyId: string, granteeAddr: string, expiryMs = 0, sponsored = false) =>
+    request<{ success: boolean; transaction: string }>('POST', `/history/${historyId}/grant/prepare`, {
+      granteeAddr,
+      expiryMs,
+      sponsored,
+    }),
+  prepareGrantPartialAccess: (historyId: string, granteeAddr: string, entryIds: number[], expiryMs = 0, sponsored = false) =>
+    request<{ success: boolean; transaction: string }>('POST', `/history/${historyId}/grant-partial/prepare`, {
+      granteeAddr,
+      entryIds,
+      expiryMs,
+      sponsored,
+    }),
+  prepareRevokeAccess: (historyId: string, granteeAddr: string, sponsored = false) =>
+    request<{ success: boolean; transaction: string }>('POST', `/history/${historyId}/revoke-access/prepare`, {
+      granteeAddr,
+      sponsored,
+    }),
+  confirmAccess: (
+    historyId: string,
+    data: {
+      digest: string;
+      granteeAddr: string;
+      action: 'grant' | 'revoke';
+      scope?: 'full' | 'partial';
+      entryIds?: number[];
+      expiryMs?: number;
+    }
+  ) => request<{ success: boolean; digest: string }>('POST', `/history/${historyId}/access/confirm`, data),
+  executeSponsored: (transactionBytes: string, zkLoginSignature: string) =>
+    request<{ digest: string }>('POST', '/history/sponsored/execute', {
+      transactionBytes,
+      zkLoginSignature,
+    }),
+  demoGrantAccess: (data: {
+    historyId: string;
+    granteeAddr: string;
+    action?: 'grant' | 'revoke';
+    scope?: 'full' | 'partial';
+    entryIds?: number[];
+    expiryMs?: number;
+  }) => request<{ success: boolean; digest: string; demo: true }>('POST', '/history/demo/grant', data),
   grantFullAccess: (historyId: string, granteeAddr: string, expiryMs = 0) =>
     request<GrantResponse>('POST', `/history/${historyId}/grant`, { granteeAddr, expiryMs }),
 
@@ -214,6 +268,7 @@ export interface NotificationItem {
   title: string;
   message: string;
   metadata: Record<string, unknown>;
+  actor_addr: string;
   read_at: string | null;
   created_at: string;
 }
@@ -303,6 +358,7 @@ export interface InstitutionListResponse {
     name: string;
     license_number: string;
     created_at: string;
+    revoked_at: string | null;
   }>;
 }
 

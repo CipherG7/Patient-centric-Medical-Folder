@@ -30,6 +30,7 @@ import { validate } from '../middleware/validate';
 import { apiKeyAuth, requireRole } from '../middleware/auth';
 import { getDb } from '../db';
 import { recordOffchainAuditEvent } from '../audit/offchain';
+import { getDemoAccess } from '../access/demo-access';
 
 const router = Router();
 
@@ -185,7 +186,10 @@ router.get(
         transaction: tx,
         include: { effects: true },
       });
-      if (simulation.$kind === 'FailedTransaction') {
+      if (
+        simulation.$kind === 'FailedTransaction' &&
+        (await getDemoAccess(historyId, req.user!.address))?.scope !== 'full'
+      ) {
         throw new AppError(
           'Access denied: the patient has not granted you access to this medical history',
           403
@@ -309,7 +313,13 @@ router.get(
         transaction: readTx,
         include: { effects: true },
       });
-      if (simulation.$kind === 'FailedTransaction') {
+      const demoAccess = await getDemoAccess(historyId, req.user!.address);
+      if (
+        simulation.$kind === 'FailedTransaction' &&
+        !(demoAccess?.scope === 'full'
+          || (demoAccess?.scope === 'partial'
+            && demoAccess.entryIds.includes(Number(entryId))))
+      ) {
         throw new AppError(
           'Access denied: the patient has not granted you access to this entry',
           403

@@ -43,6 +43,8 @@ export const config = {
   // Google zkLogin
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
   ZKLOGIN_SALT_SECRET: process.env.ZKLOGIN_SALT_SECRET || '',
+  ZKLOGIN_PROVER_URL:
+    process.env.ZKLOGIN_PROVER_URL || 'https://prover-dev.mystenlabs.com/v1',
 
   // Walrus storage
   WALRUS_ENABLED: process.env.WALRUS_ENABLED !== 'false',

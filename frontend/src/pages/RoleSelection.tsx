@@ -56,13 +56,14 @@ export function RoleSelection() {
           acceptedTerms
         );
         localStorage.setItem('zklogin_address', session.address);
+        if (session.zkLoginSalt) sessionStorage.setItem('zklogin_salt', session.zkLoginSalt);
+        sessionStorage.setItem('zklogin_jwt', pendingToken);
         localStorage.setItem('zklogin_issuer', 'https://accounts.google.com');
+        for (const key of ['zklogin_jwt', 'zklogin_salt', 'zklogin_ephemeral_secret', 'zklogin_ephemeral_public', 'zklogin_randomness', 'zklogin_max_epoch']) {
+          localStorage.removeItem(key);
+        }
         sessionStorage.removeItem('zklogin_pending_jwt');
         sessionStorage.removeItem('zklogin_pending_challenge_id');
-        sessionStorage.removeItem('zklogin_ephemeral_secret');
-        sessionStorage.removeItem('zklogin_ephemeral_public');
-        sessionStorage.removeItem('zklogin_randomness');
-        sessionStorage.removeItem('zklogin_max_epoch');
         localStorage.setItem('auth_session', session.token);
         localStorage.setItem('auth_role', session.role);
         localStorage.setItem('terms_accepted', 'true');

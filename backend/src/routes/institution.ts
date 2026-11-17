@@ -96,10 +96,11 @@ router.post(
       // Also store metadata in PostgreSQL
       const db = getDb();
       await db.query(
-        `INSERT INTO institution_profiles (institution_addr, name, license_number)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (institution_addr) DO UPDATE SET name = $2, license_number = $3`,
-        [institutionAddr, name, licenseNumber]
+        `INSERT INTO institution_profiles (institution_addr, name, license_number, revoked_at)
+         VALUES ($1, $2, $3, NULL)
+         ON CONFLICT (institution_addr) DO UPDATE
+         SET name = $2, license_number = $3, revoked_at = NULL`,
+        [institutionAddr.toLowerCase(), name, licenseNumber]
       );
 
       if (hospitalAdminAddr) {
@@ -159,7 +160,7 @@ router.post(
       const { institutionAddr, hospitalAdminAddr } = req.body;
       const db = getDb();
       const institution = await db.query(
-        'SELECT 1 FROM institution_profiles WHERE institution_addr = $1',
+        'SELECT 1 FROM institution_profiles WHERE lower(institution_addr) = lower($1)',
         [institutionAddr.toLowerCase()]
       );
       if (institution.rows.length === 0) {
@@ -214,6 +215,26 @@ router.post(
 
       const tx = await buildRevokeInstitutionPTB(sharedIds, adminCapId, institutionAddr);
       const result = await executeTx(client, tx, signer);
+      const db = getDb();
+      const institution = await db.query(
+        `UPDATE institution_profiles
+         SET revoked_at = now()
+         WHERE lower(institution_addr) = lower($1)
+         RETURNING institution_addr`,
+        [institutionAddr]
+      );
+      if (institution.rows.length === 0) {
+        throw new AppError('Institution is not registered in the platform', 404);
+      }
+      await db.query(
+        `DELETE FROM sessions
+         WHERE user_address IN (
+           SELECT p.user_address
+           FROM user_profiles p
+           WHERE lower(p.institution_addr) = lower($1)
+         )`,
+        [institutionAddr]
+      );
 
       await recordOffchainAuditEvent({
         action: 'institution_revoked',
@@ -258,6 +279,17 @@ router.post(
 
       const tx = await buildReinstateInstitutionPTB(sharedIds, adminCapId, institutionAddr);
       const result = await executeTx(client, tx, signer);
+      const db = getDb();
+      const institution = await db.query(
+        `UPDATE institution_profiles
+         SET revoked_at = NULL
+         WHERE lower(institution_addr) = lower($1)
+         RETURNING institution_addr`,
+        [institutionAddr]
+      );
+      if (institution.rows.length === 0) {
+        throw new AppError('Institution is not registered in the platform', 404);
+      }
 
       await recordOffchainAuditEvent({
         action: 'institution_reinstated',
@@ -294,7 +326,7 @@ router.get(
       // Get profile from PostgreSQL
       const db = getDb();
       const { rows } = await db.query(
-        'SELECT * FROM institution_profiles WHERE institution_addr = $1',
+        'SELECT * FROM institution_profiles WHERE lower(institution_addr) = lower($1)',
         [addr]
       );
 
@@ -336,4 +368,3 @@ router.get('/', async (_req, res, next) => {
 });
 
 export default router;
-

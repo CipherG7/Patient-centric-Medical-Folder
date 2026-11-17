@@ -291,7 +291,10 @@ export function PlatformAdminDashboard() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-slate-800">{inst.name}</p>
-                      <StatusBadge variant="verified" label="Verified" />
+                      <StatusBadge
+                        variant={inst.revoked_at ? 'revoked' : 'verified'}
+                        label={inst.revoked_at ? 'Revoked' : 'Verified'}
+                      />
                     </div>
                     <p className="text-xs text-gray-500 font-mono truncate mt-0.5">
                       <WalletAddress address={inst.institution_addr} />
@@ -317,17 +320,17 @@ export function PlatformAdminDashboard() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <StatusBadge variant="active" label="Active" />
+                    <StatusBadge variant={inst.revoked_at ? 'revoked' : 'active'} label={inst.revoked_at ? 'Access revoked' : 'Active'} />
                     <button
-                      onClick={() => handleRevoke(inst.institution_addr)}
+                      onClick={() => inst.revoked_at ? handleReinstate(inst.institution_addr) : handleRevoke(inst.institution_addr)}
                       disabled={actionLoading === inst.institution_addr || !adminCapId}
                       className="btn-ghost text-amber-600 hover:text-amber-800 hover:bg-amber-50 p-1.5"
-                      title="Revoke institution"
+                      title={inst.revoked_at ? 'Reinstate institution' : 'Revoke institution'}
                     >
                       {actionLoading === inst.institution_addr ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
-                        <ShieldOff className="h-4 w-4" />
+                        inst.revoked_at ? <UserCheck className="h-4 w-4" /> : <ShieldOff className="h-4 w-4" />
                       )}
                     </button>
                   </div>

@@ -13,6 +13,25 @@ export function isPlatformAdminAddress(address: string): boolean {
   return address.toLowerCase() === DUAL_ROLE_ADDRESS;
 }
 
+async function institutionAccessIsRevoked(address: string): Promise<boolean> {
+  const { rows } = await getDb().query(
+    `SELECT i.revoked_at
+     FROM user_profiles p
+     LEFT JOIN institution_profiles i
+       ON lower(i.institution_addr) = lower(p.institution_addr)
+     WHERE lower(p.user_address) = $1`,
+    [address.toLowerCase()]
+  );
+  return rows.length > 0 && rows[0].revoked_at !== null;
+}
+
+/** Reject staff whose institution has been revoked, including existing sessions. */
+export async function assertInstitutionAccess(address: string, role: UserRole): Promise<void> {
+  if (role !== 'platform_admin' && await institutionAccessIsRevoked(address)) {
+    throw new AppError('Access to this institution has been revoked.', 403);
+  }
+}
+
 /**
  * Extend Express Request to include authenticated user info.
  */
@@ -40,8 +59,10 @@ export async function apiKeyAuth(req: Request, res: Response, next: NextFunction
   }
 
   const { rows } = await getDb().query(
-    `SELECT s.user_address, COALESCE(s.role, p.role) AS role FROM sessions s
+    `SELECT s.user_address, COALESCE(s.role, p.role) AS role, i.revoked_at FROM sessions s
      JOIN user_profiles p ON p.user_address = s.user_address
+     LEFT JOIN institution_profiles i
+       ON lower(i.institution_addr) = lower(p.institution_addr)
      WHERE s.token = $1 AND s.expires_at > now()`,
     [token]
   );
@@ -56,6 +77,10 @@ export async function apiKeyAuth(req: Request, res: Response, next: NextFunction
     res.status(403).json({ error: 'Forbidden', message: 'This wallet is not authorized as a platform administrator.' });
     return;
   }
+  if (role !== 'platform_admin' && rows[0].revoked_at !== null) {
+    res.status(403).json({ error: 'Forbidden', message: 'Access to this institution has been revoked.' });
+    return;
+  }
   req.user = { address, role };
 
   next();
@@ -66,15 +91,20 @@ export async function optionalAuth(req: Request, _res: Response, next: NextFunct
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
   if (!token) return next();
   const { rows } = await getDb().query(
-    `SELECT s.user_address, COALESCE(s.role, p.role) AS role FROM sessions s
+    `SELECT s.user_address, COALESCE(s.role, p.role) AS role, i.revoked_at FROM sessions s
      JOIN user_profiles p ON p.user_address = s.user_address
+     LEFT JOIN institution_profiles i
+       ON lower(i.institution_addr) = lower(p.institution_addr)
      WHERE s.token = $1 AND s.expires_at > now()`,
     [token]
   );
   if (rows.length > 0) {
     const address = String(rows[0].user_address).toLowerCase();
     const role = rows[0].role as UserRole;
-    if (role !== 'platform_admin' || isPlatformAdminAddress(address)) {
+    if (
+      (role === 'platform_admin' && isPlatformAdminAddress(address)) ||
+      (role !== 'platform_admin' && rows[0].revoked_at === null)
+    ) {
       req.user = { address, role };
     }
   }
