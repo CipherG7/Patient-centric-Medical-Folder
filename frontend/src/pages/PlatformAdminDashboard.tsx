@@ -2,7 +2,14 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useActiveAccount } from '@/lib/auth';
 import { auditApi } from '@/lib/api';
-import { useInstitutions, useRegisterInstitution, useRevokeInstitution, useReinstateInstitution, useLinkInstitutionAdmin } from '@/hooks/use-institutions';
+import {
+  useInstitutions,
+  useRegisterInstitution,
+  useRevokeInstitution,
+  useReinstateInstitution,
+  useLinkInstitutionAdmin,
+  useDeleteInstitution,
+} from '@/hooks/use-institutions';
 import { StatusBadge } from '@/components/StatusBadge';
 import { WalletAddress } from '@/components/WalletAddress';
 import { CardSkeleton } from '@/components/LoadingSkeleton';
@@ -21,6 +28,7 @@ import {
   Key,
   UserCheck,
   UserX,
+  Trash2,
 } from 'lucide-react';
 
 export function PlatformAdminDashboard() {
@@ -35,6 +43,7 @@ export function PlatformAdminDashboard() {
   const revokeMutation = useRevokeInstitution();
   const reinstateMutation = useReinstateInstitution();
   const linkAdminMutation = useLinkInstitutionAdmin();
+  const deleteMutation = useDeleteInstitution();
 
   const [showRegisterForm, setShowRegisterForm] = useState(false);
   const [newAddr, setNewAddr] = useState('');
@@ -129,6 +138,24 @@ export function PlatformAdminDashboard() {
       setAdminLinkAddresses((current) => ({ ...current, [institutionAddr]: '' }));
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Unable to link hospital admin');
+    }
+  };
+
+  const handleDelete = async (addr: string, name: string) => {
+    if (!adminCapId) {
+      setFormError('AdminCap object ID is required for this action');
+      return;
+    }
+    if (!window.confirm(`Permanently delete ${name}? Its on-chain registry entry and platform account links will be removed. Medical records will be retained.`)) {
+      return;
+    }
+    setActionLoading(addr);
+    try {
+      await deleteMutation.mutateAsync({ institutionAddr: addr, adminCapId });
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Institution deletion failed');
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -332,6 +359,14 @@ export function PlatformAdminDashboard() {
                       ) : (
                         inst.revoked_at ? <UserCheck className="h-4 w-4" /> : <ShieldOff className="h-4 w-4" />
                       )}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(inst.institution_addr, inst.name)}
+                      disabled={actionLoading === inst.institution_addr || !adminCapId}
+                      className="btn-ghost p-1.5 text-red-600 hover:bg-red-50 hover:text-red-800"
+                      title="Permanently delete institution"
+                    >
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
                 </div>

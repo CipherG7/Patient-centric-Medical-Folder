@@ -45,6 +45,10 @@ module medical_history::institution_registry {
         institution: address,
     }
 
+    public struct InstitutionDeleted has copy, drop {
+        institution: address,
+    }
+
     /// Runs once at publish time: mints the AdminCap to the deployer and
     /// shares an empty registry.
     fun init(ctx: &mut TxContext) {
@@ -109,6 +113,21 @@ module medical_history::institution_registry {
         );
         let inst = table::borrow_mut(&mut registry.institutions, institution_addr);
         inst.verified = true;
+    }
+
+    /// Permanently removes an institution from the active registry. Historical
+    /// medical entries remain attributable to the institution address.
+    public fun delete_institution(
+        _admin: &AdminCap,
+        registry: &mut InstitutionRegistry,
+        institution_addr: address,
+    ) {
+        assert!(
+            table::contains(&registry.institutions, institution_addr),
+            ENotRegistered,
+        );
+        table::remove(&mut registry.institutions, institution_addr);
+        event::emit(InstitutionDeleted { institution: institution_addr });
     }
 
     /// Read-only check used by other modules (e.g. `medical_history`) to

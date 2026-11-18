@@ -4,6 +4,7 @@
  * POST   /api/institutions/register     - Register a new institution (admin only)
  * POST   /api/institutions/revoke       - Revoke an institution (admin only)
  * POST   /api/institutions/reinstate    - Reinstate a revoked institution (admin only)
+ * DELETE /api/institutions/:addr        - Permanently remove an institution (admin only)
  * GET    /api/institutions/:addr        - Get institution info (public)
  * GET    /api/institutions              - List all institutions (public)
  */
@@ -15,6 +16,7 @@ import {
   buildRegisterInstitutionPTB,
   buildRevokeInstitutionPTB,
   buildReinstateInstitutionPTB,
+  buildDeleteInstitutionPTB,
   executeTx,
 } from '../sui/transactions';
 import { getSharedObjectIds } from '../utils/sui-helpers';
@@ -306,6 +308,79 @@ router.post(
         digest: result.digest,
         institutionAddr,
       });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * Permanently remove an institution from the active registry and off-chain
+ * account directory. Medical records and audit events are retained.
+ */
+router.delete(
+  '/:addr',
+  apiKeyAuth,
+  requireRole('platform_admin'),
+  validate({ params: AddrParamSchema }),
+  async (req, res, next) => {
+    try {
+      const institutionAddr = req.params.addr.toLowerCase();
+      const adminCapId = req.headers['x-admin-cap-id'] as string;
+      if (!adminCapId) {
+        throw new AppError('AdminCap object ID required in x-admin-cap-id header', 400);
+      }
+
+      const db = getDb();
+      const dbClient = await db.connect();
+      const client = getSuiClient();
+      const signer = getAdminKeypair();
+      const sharedIds = getSharedObjectIds();
+      const tx = await buildDeleteInstitutionPTB(sharedIds, adminCapId, institutionAddr);
+      const result = await executeTx(client, tx, signer);
+
+      await dbClient.query('BEGIN');
+      try {
+        await dbClient.query(
+          `DELETE FROM sessions
+           WHERE user_address IN (
+             SELECT user_address FROM user_profiles
+             WHERE lower(institution_addr) = lower($1)
+           )`,
+          [institutionAddr]
+        );
+        await dbClient.query(
+          `UPDATE user_profiles
+           SET institution_addr = NULL, updated_at = now()
+           WHERE lower(institution_addr) = lower($1)`,
+          [institutionAddr]
+        );
+        const deleted = await dbClient.query(
+          'DELETE FROM institution_profiles WHERE lower(institution_addr) = lower($1) RETURNING institution_addr',
+          [institutionAddr]
+        );
+        if (deleted.rows.length === 0) {
+          throw new AppError('Institution is not registered in the platform', 404);
+        }
+        await dbClient.query('COMMIT');
+      } catch (err) {
+        await dbClient.query('ROLLBACK');
+        throw err;
+      } finally {
+        dbClient.release();
+      }
+
+      await recordOffchainAuditEvent({
+        action: 'institution_deleted',
+        actorAddr: req.user!.address,
+        actorRole: req.user!.role,
+        targetType: 'institution',
+        targetId: institutionAddr,
+        result: 'success',
+        requestId: req.requestId,
+      });
+
+      res.json({ success: true, digest: result.digest, institutionAddr });
     } catch (err) {
       next(err);
     }

@@ -75,3 +75,14 @@ export function useLinkInstitutionAdmin() {
   });
 }
 
+export function useDeleteInstitution() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ institutionAddr, adminCapId }: { institutionAddr: string; adminCapId: string }) =>
+      institutionApi.delete(institutionAddr, adminCapId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['institutions'] });
+    },
+  });
+}

@@ -386,6 +386,13 @@ export const institutionApi = {
       { institutionAddr },
       { 'x-admin-cap-id': adminCapId }
     ),
+  delete: (institutionAddr: string, adminCapId: string) =>
+    request<{ success: boolean; digest: string }>(
+      'DELETE',
+      `/institutions/${institutionAddr}`,
+      undefined,
+      { 'x-admin-cap-id': adminCapId }
+    ),
   linkAdmin: (institutionAddr: string, hospitalAdminAddr: string) =>
     request<{ success: boolean; institutionAddr: string; hospitalAdminAddr: string }>(
       'POST',

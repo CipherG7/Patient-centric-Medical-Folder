@@ -215,6 +215,31 @@ export async function buildReinstateInstitutionPTB(
   return tx;
 }
 
+/**
+ * Permanently remove an institution from the on-chain registry.
+ * Historical medical records remain unchanged and attributable to its address.
+ */
+export async function buildDeleteInstitutionPTB(
+  sharedObjects: SharedObjectIds,
+  adminCapId: string,
+  institutionAddr: string
+): Promise<Transaction> {
+  const tx = new Transaction();
+
+  const registryRef = await fetchSharedObjectRef(sharedObjects.institutionRegistry, true);
+
+  tx.moveCall({
+    target: `${PACKAGE_ID()}::institution_registry::delete_institution`,
+    arguments: [
+      tx.object(adminCapId),
+      tx.sharedObjectRef(registryRef),
+      tx.pure.address(institutionAddr),
+    ],
+  });
+
+  return tx;
+}
+
 // ─── Patient Registry ──────────────────────────────────────
 
 /**
